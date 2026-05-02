@@ -1,6 +1,5 @@
 # Local secrets and deployment config
-07_Deploy/config/*.local.json
-07_Deploy/config/*live*.json
+07_Deploy/targets/*/config.json
 01_Admin/WebHelper.txt
 01_Admin/*credential*
 01_Admin/*password*

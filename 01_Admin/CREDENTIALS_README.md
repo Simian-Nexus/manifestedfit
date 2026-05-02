@@ -4,7 +4,8 @@ Do not store real credentials in this folder.
 
 Expected local-only files:
 
-- `07_Deploy/config/ftp-publish.local.json` for FTP/FTPS deployment
+- `07_Deploy/targets/bluehost/config.json` for Bluehost FTP/FTPS deployment
+- optional future `07_Deploy/targets/local-preview/config.json` for local-only runtime settings
 - future `.env` files for email platforms, analytics APIs, or affiliate dashboards
 
 Suggested password-manager entries:
@@ -16,4 +17,3 @@ Suggested password-manager entries:
 - email marketing platform
 - Pinterest account
 - Google Flow or image-generation account
-

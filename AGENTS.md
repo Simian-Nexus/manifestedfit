@@ -20,7 +20,9 @@ Manifested Fit is an affiliate funnel and content project for `manifestedfit.com
 ## Deployment
 
 - FTP/FTPS publishing lives in `07_Deploy/`.
-- Use `07_Deploy/config/ftp-publish.local.json` for real credentials. That file should remain ignored.
+- Deployment targets live in `07_Deploy/targets/`.
+- Use `07_Deploy/targets/bluehost/config.json` for the Bluehost FTP credentials. That file should remain ignored.
+- Use `07_Deploy/targets/local-preview/` for localhost preview notes and any future local-only runtime config.
 - Prefer uploading explicit files or the full `03_Website/public` folder after local verification.
 
 ## Closeout
@@ -31,4 +33,3 @@ After meaningful work, update:
 2. `Brain/SESSION_LOG.md`
 3. `Brain/TASKS.md`
 4. `NEXT_CONTEXT_BRIEF.md` when workflow or next steps change
-

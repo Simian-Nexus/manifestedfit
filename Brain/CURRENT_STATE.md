@@ -13,7 +13,7 @@ The project now has:
 - a lightweight static/PHP website scaffold in `03_Website/public/`
 - an interactive 7-day mind-body reset lead magnet
 - initial strategy, content, launch, and deployment docs
-- a private FTP config pattern that mirrors the newer Bluehost publish helpers in sibling projects
+- a target-folder deployment pattern where `07_Deploy/targets/bluehost/config.json` is the ignored Bluehost FTP config
 - a local memory system in `Brain/`
 
 Local verification has passed for PHP syntax, PowerShell deploy-script parsing, main page responses, and the starter POST lead capture endpoint.

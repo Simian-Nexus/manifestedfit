@@ -44,11 +44,12 @@ git commit -m "Initial Manifested Fit funnel scaffold"
 
 ## Deployment
 
-Copy `07_Deploy/config/ftp-publish.local.example.json` to `07_Deploy/config/ftp-publish.local.json`, add the FTP/FTPS credentials, then run:
+Deployment targets live under `07_Deploy/targets/`.
+
+For Bluehost, copy `07_Deploy/targets/bluehost/config.example.json` to `07_Deploy/targets/bluehost/config.json`, add the FTP/FTPS password, then run:
 
 ```powershell
 .\07_Deploy\tools\publish-ftp-files.ps1 -All
 ```
 
-Keep the real local config file out of Git.
-
+Keep target `config.json` files out of Git. They are ignored because they can contain secrets.

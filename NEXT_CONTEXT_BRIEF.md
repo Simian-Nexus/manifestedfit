@@ -27,7 +27,8 @@ Verification on 2026-05-01: `collect-lead.php` passes `php -l`, the FTP publish 
 
 - Website root: `03_Website/public/`
 - Deploy script: `07_Deploy/tools/publish-ftp-files.ps1`
-- Deploy config example: `07_Deploy/config/ftp-publish.local.example.json`
+- Bluehost deploy target: `07_Deploy/targets/bluehost/`
+- Local preview target: `07_Deploy/targets/local-preview/`
 - Strategy map: `06_Planning/VIDEO_WORKFLOW_MAP.md`
 - Affiliate strategy: `06_Planning/AFFILIATE_STRATEGY.md`
 - Launch checklist: `06_Planning/LAUNCH_CHECKLIST.md`
@@ -35,7 +36,7 @@ Verification on 2026-05-01: `collect-lead.php` passes `php -l`, the FTP publish 
 
 ## Next Likely Steps
 
-1. Add real FTP/FTPS credentials to `07_Deploy/config/ftp-publish.local.json`.
+1. Add or confirm real FTP/FTPS credentials in `07_Deploy/targets/bluehost/config.json`.
 2. Replace the placeholder affiliate CTA link in `03_Website/public/assets/js/config.js` after Impact approval.
 3. Choose an email platform if long-term follow-up should move out of local CSV capture.
 4. Generate or manually create the first Pinterest pin batch from `05_Content/pinterest/pin_prompt_bank.md`.

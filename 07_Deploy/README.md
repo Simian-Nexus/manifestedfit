@@ -2,17 +2,32 @@
 
 This folder holds FTP/FTPS publishing tools for `manifestedfit.com`.
 
-## Config
+## Targets
 
-Copy:
+Deployment config is organized by target folder. The folder name carries the intent, while each target can use the same plain config filename.
 
-```powershell
-Copy-Item .\07_Deploy\config\ftp-publish.local.example.json .\07_Deploy\config\ftp-publish.local.json
+```text
+07_Deploy/targets/
+  bluehost/
+    config.example.json
+    config.json
+  local-preview/
+    README.md
 ```
 
-Then edit `ftp-publish.local.json` with the real credentials.
+`config.json` files are ignored by Git because they can contain secrets.
 
-The real local config is ignored by Git.
+## Bluehost Config
+
+Copy or create:
+
+```powershell
+Copy-Item .\07_Deploy\targets\bluehost\config.example.json .\07_Deploy\targets\bluehost\config.json
+```
+
+Then edit `07_Deploy/targets/bluehost/config.json` with the real Bluehost FTP password.
+
+For localhost preview, use `07_Deploy/targets/local-preview/README.md`. Localhost does not need FTP credentials.
 
 ## Publish
 
@@ -33,6 +48,5 @@ The helper uploads with `curl.exe` and downloads each uploaded file to verify th
 ## Notes
 
 - Prefer an FTP account rooted directly at the `manifestedfit.com` web root.
-- If the FTP account is rooted above the web root, set `remotePath` in the local config.
+- If the FTP account is rooted above the web root, set `remotePath` in `07_Deploy/targets/bluehost/config.json`.
 - Do not store real credentials in docs, memory, or Git.
-

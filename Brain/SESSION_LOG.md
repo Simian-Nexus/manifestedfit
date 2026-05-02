@@ -10,3 +10,4 @@
 - Verified PHP syntax, PowerShell deploy-script parsing, local page responses, and the starter lead capture endpoint.
 - Created ignored local FTP config with the Bluehost server, username, and port; password remains a local placeholder.
 - Initialized Git, connected the GitHub remote, excluded local credential files and `Archive/`, committed the initial scaffold, and pushed `main`.
+- Renamed the deployment config layout so target folders carry intent: Bluehost credentials now live in ignored `07_Deploy/targets/bluehost/config.json`, and localhost preview guidance lives in `07_Deploy/targets/local-preview/`.

@@ -1,5 +1,5 @@
 param(
-    [string]$ConfigPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'config\ftp-publish.local.json'),
+    [string]$ConfigPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'targets\bluehost\config.json'),
     [string[]]$Files,
     [switch]$All
 )
@@ -14,7 +14,7 @@ function Get-Config {
     param([string]$Path)
 
     if (-not (Test-Path $Path -PathType Leaf)) {
-        throw "Config file not found: $Path. Copy 07_Deploy/config/ftp-publish.local.example.json to ftp-publish.local.json first."
+        throw "Config file not found: $Path. Copy 07_Deploy/targets/bluehost/config.example.json to config.json first."
     }
 
     return Get-Content -Path $Path -Raw | ConvertFrom-Json
@@ -200,4 +200,3 @@ foreach ($relativePath in ($pathsToPublish | Sort-Object -Unique)) {
 }
 
 Write-Host 'FTP publish complete.'
-
