@@ -1,0 +1,30 @@
+# Local secrets and deployment config
+07_Deploy/config/*.local.json
+07_Deploy/config/*live*.json
+01_Admin/WebHelper.txt
+01_Admin/*credential*
+01_Admin/*password*
+.env
+.env.*
+!.env.example
+
+# Captured leads and runtime data
+03_Website/public/storage/*.csv
+03_Website/public/storage/*.json
+03_Website/public/storage/*.log
+
+# Historical/reference material, not active source
+Archive/
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+.vite/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
