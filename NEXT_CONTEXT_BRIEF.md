@@ -17,7 +17,7 @@ The working website lives in `03_Website/public/` and currently includes:
 - a small PHP opt-in collector at `api/collect-lead.php`
 - private lead storage protected by `storage/.htaccess`
 
-The deployment baseline mirrors the newer Spinning Monkey/Bluehost pattern: FTP credentials stay in ignored JSON config, publishing uses `curl.exe`, and uploaded files are hash-verified after transfer.
+The deployment baseline mirrors the newer Spinning Monkey FTP publish-helper pattern: FTP credentials stay in ignored JSON config, publishing uses `curl.exe`, and uploaded files are hash-verified after transfer.
 
 Mindvalley's official affiliate page says the application runs through Impact, the dashboard is hosted on Impact, the baseline commission is 30%, and the cookie lifetime is 30 days. It also says they look for a large established audience, so Mindvalley should be treated as the aspirational target while the site builds list and traffic.
 
@@ -27,7 +27,7 @@ Verification on 2026-05-01: `collect-lead.php` passes `php -l`, the FTP publish 
 
 - Website root: `03_Website/public/`
 - Deploy script: `07_Deploy/tools/publish-ftp-files.ps1`
-- Bluehost deploy target: `07_Deploy/targets/bluehost/`
+- Production deploy target: `07_Deploy/targets/prod/`
 - Local preview target: `07_Deploy/targets/local-preview/`
 - Strategy map: `06_Planning/VIDEO_WORKFLOW_MAP.md`
 - Affiliate strategy: `06_Planning/AFFILIATE_STRATEGY.md`
@@ -36,7 +36,7 @@ Verification on 2026-05-01: `collect-lead.php` passes `php -l`, the FTP publish 
 
 ## Next Likely Steps
 
-1. Add or confirm real FTP/FTPS credentials in `07_Deploy/targets/bluehost/config.json`.
+1. Add or confirm real FTP/FTPS credentials in `07_Deploy/targets/prod/config.json`.
 2. Replace the placeholder affiliate CTA link in `03_Website/public/assets/js/config.js` after Impact approval.
 3. Choose an email platform if long-term follow-up should move out of local CSV capture.
 4. Generate or manually create the first Pinterest pin batch from `05_Content/pinterest/pin_prompt_bank.md`.

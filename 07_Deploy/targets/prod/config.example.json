@@ -1,10 +1,9 @@
 {
   "sitePublish": {
-    "baseUrl": "ftps://ftp.hpn.oui.mybluehost.me:21",
-    "username": "WebHelper@manifestedfit.com",
+    "baseUrl": "ftps://ftp.example.com:21",
+    "username": "ftp-user@example.com",
     "password": "PUT_REAL_PASSWORD_IN_IGNORED_CONFIG_JSON",
     "remotePath": "/",
     "localRoot": "03_Website/public"
   }
 }
-

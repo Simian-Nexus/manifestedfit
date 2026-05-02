@@ -2,7 +2,7 @@
 
 ## Before Public Traffic
 
-- [ ] Add real FTP/FTPS credentials to `07_Deploy/targets/bluehost/config.json`.
+- [ ] Add real FTP/FTPS credentials to `07_Deploy/targets/prod/config.json`.
 - [ ] Run the local PHP server and test the opt-in flow.
 - [ ] Confirm leads are captured and `storage/leads.csv` is not publicly readable.
 - [ ] Replace placeholder affiliate links after approval.

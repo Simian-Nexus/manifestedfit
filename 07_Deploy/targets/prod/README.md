@@ -1,16 +1,16 @@
-# Bluehost Target
+# Production Target
 
-This target publishes the website to the Bluehost FTP/FTPS account for `manifestedfit.com`.
+This target publishes the website to the production FTP/FTPS account for `manifestedfit.com`.
 
 ## Real Config
 
 Create or edit:
 
 ```text
-07_Deploy/targets/bluehost/config.json
+07_Deploy/targets/prod/config.json
 ```
 
-That file contains the real Bluehost FTP password and is ignored by Git.
+That file contains the real production FTP password and is ignored by Git.
 
 Use the same shape as `config.example.json`.
 
@@ -23,4 +23,3 @@ From the project root:
 ```
 
 The publish helper uses this target by default.
-

@@ -46,7 +46,7 @@ git commit -m "Initial Manifested Fit funnel scaffold"
 
 Deployment targets live under `07_Deploy/targets/`.
 
-For Bluehost, copy `07_Deploy/targets/bluehost/config.example.json` to `07_Deploy/targets/bluehost/config.json`, add the FTP/FTPS password, then run:
+For production, copy `07_Deploy/targets/prod/config.example.json` to `07_Deploy/targets/prod/config.json`, add the FTP/FTPS password, then run:
 
 ```powershell
 .\07_Deploy\tools\publish-ftp-files.ps1 -All

@@ -8,7 +8,7 @@ Deployment config is organized by target folder. The folder name carries the int
 
 ```text
 07_Deploy/targets/
-  bluehost/
+  prod/
     config.example.json
     config.json
   local-preview/
@@ -17,15 +17,15 @@ Deployment config is organized by target folder. The folder name carries the int
 
 `config.json` files are ignored by Git because they can contain secrets.
 
-## Bluehost Config
+## Production Config
 
 Copy or create:
 
 ```powershell
-Copy-Item .\07_Deploy\targets\bluehost\config.example.json .\07_Deploy\targets\bluehost\config.json
+Copy-Item .\07_Deploy\targets\prod\config.example.json .\07_Deploy\targets\prod\config.json
 ```
 
-Then edit `07_Deploy/targets/bluehost/config.json` with the real Bluehost FTP password.
+Then edit `07_Deploy/targets/prod/config.json` with the real production FTP password.
 
 For localhost preview, use `07_Deploy/targets/local-preview/README.md`. Localhost does not need FTP credentials.
 
@@ -48,5 +48,5 @@ The helper uploads with `curl.exe` and downloads each uploaded file to verify th
 ## Notes
 
 - Prefer an FTP account rooted directly at the `manifestedfit.com` web root.
-- If the FTP account is rooted above the web root, set `remotePath` in `07_Deploy/targets/bluehost/config.json`.
+- If the FTP account is rooted above the web root, set `remotePath` in `07_Deploy/targets/prod/config.json`.
 - Do not store real credentials in docs, memory, or Git.
