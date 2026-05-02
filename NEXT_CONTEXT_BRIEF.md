@@ -23,6 +23,8 @@ Mindvalley's official affiliate page says the application runs through Impact, t
 
 Verification on 2026-05-01: `collect-lead.php` passes `php -l`, the FTP publish helper parses as PowerShell, the local PHP server returned 200 for the main pages, and a test POST returned a thank-you redirect JSON response. The fake test lead CSV was removed after verification.
 
+Production publish note: uploading through the ignored prod config succeeds when the FTPS host is the certificate-matching server host used by sibling projects. The FTP account currently resolves to `162.241.244.106`, and the remote uploaded `index.html` contains the Manifested Fit page. Public `manifestedfit.com` currently resolves to `162.241.244.144` and returns the hosting error page, so DNS or hosting assignment must be corrected before the public domain shows the uploaded site.
+
 ## Important Paths
 
 - Website root: `03_Website/public/`
