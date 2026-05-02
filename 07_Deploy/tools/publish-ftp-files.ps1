@@ -79,7 +79,14 @@ function Get-RelativePath {
         [string]$Path
     )
 
-    return [IO.Path]::GetRelativePath($Root, $Path).Replace('\', '/')
+    $rootFullPath = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    $pathFullPath = [IO.Path]::GetFullPath($Path)
+
+    if (-not $pathFullPath.StartsWith($rootFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Path is not inside local root: $pathFullPath"
+    }
+
+    return $pathFullPath.Substring($rootFullPath.Length).Replace('\', '/')
 }
 
 function Get-PublishableFiles {
