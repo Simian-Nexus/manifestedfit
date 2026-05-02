@@ -6,6 +6,8 @@ Last updated: 2026-05-01
 
 Manifested Fit is being rebuilt as a Codex-friendly affiliate funnel for `manifestedfit.com`.
 
+The project is now a Git repository on branch `main` with remote `origin` set to `https://github.com/Simian-Nexus/manifestedfit.git`.
+
 The project now has:
 
 - a lightweight static/PHP website scaffold in `03_Website/public/`

@@ -4,6 +4,8 @@
 
 Manifested Fit now has a clean project scaffold for an affiliate funnel on `manifestedfit.com`.
 
+The local project is a Git repository on `main`, tracking `origin/main` at `https://github.com/Simian-Nexus/manifestedfit.git`.
+
 The original material has been preserved in `Archive/Pre_2026-05-01/`, including old video/content assets, a previous URL shortener experiment, and a previous WordPress snapshot that also exists under the broader `Spinning_Monkey_Web` archive.
 
 The working website lives in `03_Website/public/` and currently includes:
