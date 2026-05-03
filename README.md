@@ -20,6 +20,8 @@ The first build path is intentionally simple:
 - FTP publish helper: `07_Deploy/tools/publish-ftp-files.ps1`
 - Project memory: `Brain/`
 
+Affiliate offer links are managed in `03_Website/public/assets/js/affiliate-offers.js` and rendered on `03_Website/public/resources/index.html`.
+
 ## Local Preview
 
 The static pages can be opened directly from `03_Website/public/index.html`.

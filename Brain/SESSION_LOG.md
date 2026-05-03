@@ -16,3 +16,11 @@
 - Updated the ignored production FTP config to use the certificate-matching FTPS host pattern from sibling projects.
 - Published all 14 files from `03_Website/public/` to the production FTP account and verified remote hashes.
 - Public `manifestedfit.com` currently resolves to `162.241.244.144`, while the FTP/web account that received the upload is `162.241.244.106`; forcing the domain to `162.241.244.106` returns the Manifested Fit page, so DNS/hosting assignment still needs alignment.
+
+## 2026-05-02
+
+- Added `03_Website/public/assets/js/affiliate-offers.js` as the public offer registry.
+- Added `/resources/` as the public resource and affiliate-offer hub.
+- Updated the homepage, thank-you page, lead magnet, and legal nav to include resources where useful.
+- Locally tested main pages and the opt-in endpoint, removed the fake test CSV, then published 17 public files to production FTP with hash verification.
+- Confirmed `http://manifestedfit.com/resources/` returns 200 and references the offer registry.

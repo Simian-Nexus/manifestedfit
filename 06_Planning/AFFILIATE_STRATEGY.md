@@ -44,7 +44,7 @@ Email sequence:
 Affiliate tracking:
 
 - use UTM tags on Pinterest pins
-- keep affiliate links in one config/map file
+- keep public affiliate links in `03_Website/public/assets/js/affiliate-offers.js`
 - later add redirect slugs such as `/go/mindvalley/`
 
 ## Fallback Offer Categories
@@ -71,4 +71,3 @@ Approval criteria:
 - Do not imply guaranteed fitness, health, weight loss, or income outcomes.
 - Treat the website as educational and inspirational, not medical advice.
 - Use a real unsubscribe-capable email platform before sending ongoing campaigns at scale.
-

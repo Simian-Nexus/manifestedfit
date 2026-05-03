@@ -1,8 +1,6 @@
 window.ManifestedFitConfig = {
-  affiliateLinks: {
-    primary: "https://www.mindvalley.com/affiliates"
-  },
+  primaryOfferSlug: "mindvalley",
+  resourcesPath: "/resources/",
   leadMagnetPath: "/lead-magnet/",
   thankYouPath: "/thank-you/"
 };
-

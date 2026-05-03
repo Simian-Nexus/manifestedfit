@@ -1,5 +1,21 @@
 (function () {
   const config = window.ManifestedFitConfig || {};
+  const offers = window.ManifestedFitOffers || [];
+
+  function getOffer(slug) {
+    return offers.find((offer) => offer.slug === slug);
+  }
+
+  function getOfferUrl(offer) {
+    if (!offer) {
+      return config.resourcesPath || "/resources/";
+    }
+    return offer.url || offer.fallbackUrl || config.resourcesPath || "/resources/";
+  }
+
+  function getPrimaryOfferUrl() {
+    return getOfferUrl(getOffer(config.primaryOfferSlug));
+  }
 
   function fillTrackingFields(form) {
     const params = new URLSearchParams(window.location.search);
@@ -89,7 +105,10 @@
   });
 
   document.querySelectorAll("[data-affiliate-link]").forEach((link) => {
-    link.href = config.affiliateLinks?.primary || "https://www.mindvalley.com/affiliates";
+    const offer = getOffer(link.dataset.affiliateLink || config.primaryOfferSlug);
+    link.href = getOfferUrl(offer) || getPrimaryOfferUrl();
+    if (offer?.status && offer.status !== "active") {
+      link.setAttribute("data-offer-status", offer.status);
+    }
   });
 })();
-

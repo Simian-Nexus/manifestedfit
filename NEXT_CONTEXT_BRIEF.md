@@ -13,6 +13,8 @@ The working website lives in `03_Website/public/` and currently includes:
 - a landing page at `index.html`
 - an interactive lead magnet at `lead-magnet/index.html`
 - a thank-you/access page at `thank-you/index.html`
+- a resources/affiliate hub at `resources/index.html`
+- a public offer registry at `assets/js/affiliate-offers.js`
 - legal placeholders for affiliate disclosure and privacy
 - a small PHP opt-in collector at `api/collect-lead.php`
 - private lead storage protected by `storage/.htaccess`
@@ -23,7 +25,7 @@ Mindvalley's official affiliate page says the application runs through Impact, t
 
 Verification on 2026-05-01: `collect-lead.php` passes `php -l`, the FTP publish helper parses as PowerShell, the local PHP server returned 200 for the main pages, and a test POST returned a thank-you redirect JSON response. The fake test lead CSV was removed after verification.
 
-Production publish note: uploading through the ignored prod config succeeds when the FTPS host is the certificate-matching server host used by sibling projects. The FTP account currently resolves to `162.241.244.106`, and the remote uploaded `index.html` contains the Manifested Fit page. Public `manifestedfit.com` currently resolves to `162.241.244.144` and returns the hosting error page, so DNS or hosting assignment must be corrected before the public domain shows the uploaded site.
+Production publish note: uploading through the ignored prod config succeeds when the FTPS host is the certificate-matching server host used by sibling projects. As of 2026-05-02, the public domain is serving the site and `/resources/` returns the new resources hub.
 
 ## Important Paths
 
@@ -38,8 +40,8 @@ Production publish note: uploading through the ignored prod config succeeds when
 
 ## Next Likely Steps
 
-1. Add or confirm real FTP/FTPS credentials in `07_Deploy/targets/prod/config.json`.
-2. Replace the placeholder affiliate CTA link in `03_Website/public/assets/js/config.js` after Impact approval.
+1. Replace the placeholder affiliate offers in `03_Website/public/assets/js/affiliate-offers.js` as accounts are approved.
+2. Replace the primary offer slug in `03_Website/public/assets/js/config.js` if another offer becomes the main recommendation.
 3. Choose an email platform if long-term follow-up should move out of local CSV capture.
 4. Generate or manually create the first Pinterest pin batch from `05_Content/pinterest/pin_prompt_bank.md`.
 5. Run a local PHP preview and test the opt-in path before publishing.

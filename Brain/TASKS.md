@@ -2,10 +2,8 @@
 
 ## Next
 
-- Replace the password placeholder in `07_Deploy/targets/prod/config.json`.
-- Align DNS or hosting assignment so `manifestedfit.com` points to the production account at `162.241.244.106`, where the uploaded Manifested Fit files are already present.
-- Test `03_Website/public/api/collect-lead.php` through a local PHP server.
 - Replace the placeholder affiliate CTA after Impact/Mindvalley approval.
+- Add real active offers to `03_Website/public/assets/js/affiliate-offers.js` as affiliate accounts are approved.
 - Decide whether lead capture should move to MailerLite, ConvertKit, Beehiiv, Brevo, or another email platform before launch.
 - Generate the first Pinterest pin batch and save approved images under `Media/`.
 

@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-05-01
+Last updated: 2026-05-02
 
 ## Project Shape
 
@@ -12,11 +12,14 @@ The project now has:
 
 - a lightweight static/PHP website scaffold in `03_Website/public/`
 - an interactive 7-day mind-body reset lead magnet
+- a public resources page backed by `03_Website/public/assets/js/affiliate-offers.js`
 - initial strategy, content, launch, and deployment docs
 - a target-folder deployment pattern where `07_Deploy/targets/prod/config.json` is the ignored production FTP config
 - a local memory system in `Brain/`
 
 Local verification has passed for PHP syntax, PowerShell deploy-script parsing, main page responses, and the starter POST lead capture endpoint.
+
+The live site now serves `/resources/` and the public affiliate-offer registry script.
 
 ## Working Assumptions
 
