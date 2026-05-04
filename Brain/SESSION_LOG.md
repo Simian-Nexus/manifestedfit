@@ -24,3 +24,9 @@
 - Updated the homepage, thank-you page, lead magnet, and legal nav to include resources where useful.
 - Locally tested main pages and the opt-in endpoint, removed the fake test CSV, then published 17 public files to production FTP with hash verification.
 - Confirmed `http://manifestedfit.com/resources/` returns 200 and references the offer registry.
+
+## 2026-05-03
+
+- Added `06_Planning/AFFILIATE_APPLICATION_READINESS.md` to focus the next fresh context on audience proof and application readiness before applying to selective affiliate programs.
+- Added `06_Planning/HERMES_SOCIAL_AGENT_WORKFLOW_BRIEF.md` to connect Manifested Fit growth work with the Hermes/AI Command Bridge Agent Studio direction.
+- Updated `NEXT_CONTEXT_BRIEF.md`, `Brain/CURRENT_STATE.md`, and `Brain/TASKS.md` so future sessions know the user has minimal current niche social presence and wants a supervised social media assistance workflow.

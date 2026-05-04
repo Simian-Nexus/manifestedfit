@@ -31,3 +31,5 @@ The live site now serves `/resources/` and the public affiliate-offer registry s
 ## External Notes
 
 Mindvalley is the initial aspirational affiliate offer. Its official affiliate page currently points applications to Impact and says the affiliate dashboard is hosted on Impact.
+
+As of 2026-05-03, the next strategic focus is affiliate-application readiness. The user has very limited social presence in this niche, so future sessions should prioritize profile setup, content cadence, lead capture/email platform decisions, lower-barrier affiliate programs, and a supervised Hermes/AI Command Bridge social assistant workflow before treating selective programs like Mindvalley as ready-to-apply.
