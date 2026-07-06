@@ -1,6 +1,18 @@
 # Current State
 
-Last updated: 2026-05-02
+Last updated: 2026-07-05
+
+## July 2026 — active workstream: automated blog + content pipeline
+
+The focus has shifted to building an automated, supervised blog/content engine. Full plan in `06_Planning/ACTION_PLAN_2026-07.md`; full handoff in `NEXT_CONTEXT_BRIEF.md`.
+
+Done and working:
+- WordPress blog is live at `manifestedfit.com/blog` (subdirectory; the flat funnel at root is untouched). Theme = Twenty Twenty-Five + our brand child theme `03_Website/wordpress/themes/manifestedfit-blog/`. Rank Math active (SiteSEO/SiteSEO Pro being removed as a conflict). SpeedyCache active.
+- `ContentEngine` user (Editor) with an Application Password; four columnist author users (DanaCole, FrankieMoon, NadiaBrooks, RowanEllis).
+- Working content pipeline: `07_Deploy/tools/push-draft.ps1` reads git-ignored `07_Deploy/targets/wordpress/config.json`, converts a Markdown file to HTML, auto-creates categories, and posts as a DRAFT via the WP REST API. Proven 2026-07-05.
+- Voice team + day-of-week posting schedule decided (`05_Content/blog/authors-and-schedule.md`); categories defined (`05_Content/blog/categories.md`).
+
+Open next steps: first real week of posts (needs the 4 author user IDs); gate the 7-Day Reset page; build the Bluehost-cron WP plugin (needs a paid AI API key, Anthropic first) for multi-provider auto-drafting; produce the first Lane A video; RankMath-optimize post 1. Safety posture unchanged: drafts only, no auto-publish, credentials stay on Jonathan's side.
 
 ## Project Shape
 

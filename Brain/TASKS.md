@@ -1,5 +1,12 @@
 # Tasks
 
+## Blog (WordPress) — live as of 2026-07-05
+
+- WordPress installed at `manifestedfit.com/blog` (subdirectory; funnel at root untouched). RankMath SEO installed and wizard completed. Permalinks set to Post name.
+- DEFERRED (do ~week of 2026-07-13, once posts are live): set up Google Search Console (URL prefix `https://manifestedfit.com/`) and a GA4 property named "Manifested Fit" under `jborthwickog@gmail.com`, then re-run RankMath's Analytics connect step so its Search Console + Analytics dropdowns populate. Skipped during initial setup because there was no traffic yet.
+- First real blog post drafted: `05_Content/blog/post-01-morning-reset-ritual.md` — needs Jonathan's own YouTube video embedded before publish.
+- Next: brand the blog (teal/green/plum + logo), confirm `/blog` is linked from the main funnel nav, publish post 1 once a video exists.
+
 ## Next
 
 - Use `06_Planning/AFFILIATE_APPLICATION_READINESS.md` as the next session's strategy anchor.

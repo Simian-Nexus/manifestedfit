@@ -3,6 +3,10 @@
 01_Admin/WebHelper.txt
 01_Admin/*credential*
 01_Admin/*password*
+03_Website/Admin/
+**/Cred.txt
+**/*credential*
+**/*password*
 .env
 .env.*
 !.env.example
