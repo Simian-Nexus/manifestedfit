@@ -1,0 +1,26 @@
+Project Folder
+D:\JonoFiles\Projects\01_Business\Spinning_Monkey_Studios\02_Active_Projects\Manifested_Fit
+Where We Left Off
+manifestedfit.com and /resources/ were live.
+Landing page, interactive 7-day reset, thank-you page and lead capture were built.
+Affiliate disclosure/privacy placeholders exist.
+Email capture currently saves to CSV; no email platform is connected.
+Affiliate links remain placeholders because no programs are approved.
+Mindvalley was postponed because its stated audience requirement is very high.
+Social presence and regular content are the main missing pieces.
+Next Steps
+Choose an email platform and connect the welcome sequence.
+Add analytics to the website.
+Confirm privacy and affiliate disclosure pages are production-ready.
+Establish consistent profiles on three channels. Recommended: Pinterest, YouTube and Instagram.
+Produce the first batch:15 Pinterest pins
+3 short-form videos
+5 reusable content angles
+
+Research ten lower-barrier wellness affiliate programs.
+Apply to two or three suitable programs after some content is public.
+Replace placeholders in:
+03_Website\public\assets\js\affiliate-offers.js
+Prepare a small media kit once early traffic and subscriber data exist.
+The most useful starting document is:
+[Affiliate application readiness](D:\\JonoFiles\\Projects\\01_Business\\Spinning_Monkey_Studios\\02_Active_Projects\\Manifested_Fit\\06_Planning\\AFFILIATE_APPLICATION_READINESS.md)

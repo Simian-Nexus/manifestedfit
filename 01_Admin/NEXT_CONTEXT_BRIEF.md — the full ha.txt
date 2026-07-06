@@ -1,0 +1,4 @@
+NEXT_CONTEXT_BRIEF.md — the full handoff. In a new chat, just say "Read NEXT_CONTEXT_BRIEF.md and let's continue" and it'll have everything: the live blog, brand child theme, the working push-draft pipeline, the voice team + day schedule, categories, safety posture, all open threads, and key paths.
+Brain/CURRENT_STATE.md — refreshed to July so your weekly-report task reads current facts, not May.
+
+The one thing a new session will need from you to jump straight into writing the first real week of posts: the four author user IDs (Users → hover each persona → the number in user_id=N). Everything else it can pick up from the brief.

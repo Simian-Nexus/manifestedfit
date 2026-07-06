@@ -1,0 +1,125 @@
+Transcript from YoutTube video 
+I Tested Letting Claude Start a YouTube Channel for 20 Minutes And THIS Happened
+https://www.youtube.com/watch?v=NKNjbno2ucs&t=27s
+0:00I gave Claude 20 minutes to build an entire YouTube channel from scratch. And what it produced is shocking. And the proof that this can work is that this
+0:088 secondschannel called Apex Psychology is getting 1.4 million views a month. And it's a faceless animated psychology
+0:1616 secondschannel. Just from ad revenue alone, they're probably making 7 to$14,000 a month. But if they sold a cheap digital guide from this channel for $100, they
+0:2424 secondscould be pulling in an extra 20,000 a month. and I'm going to show you how Claude can build this entire channel in 20 minutes. And so, let's start the
+0:3232 secondstimer and let's do it. Now, step number one is to choose a niche. And if we go to my software, tubemagic.com, and we go
+0:3939 secondsto the niche explorer tool right here, this will show you all of the best niches on YouTube with example channels within these. And for example,
+0:4747 secondspsychology is one of the best niches on YouTube. And that can be validated by all of these channels right here. And these channels can make anywhere between
+0:5555 seconds$7 and $15 per thousand views on average. And that's not counting if we're selling something from the channel. We'll make a lot more. But if
+1:021 minute, 2 secondsthis is just too many niches, what we can do is go ahead and copy all of these niches right here. Go to Claude, paste
+1:091 minute, 9 secondsit in, and then say, "Give me the top three niches from all of these, weighing
+1:171 minute, 17 secondsthe potential, and the revenue amount.
+1:221 minute, 22 secondsAnd as you can see, the top three niches are personal finance, investing, and programming." And by the way, this is especially trending right now with so
+1:301 minute, 30 secondsmany AI tools that you can talk about in this context. But we're going to go for psychology for this channel. Now, step two is channel branding. And what we're
+1:381 minute, 38 secondsgoing to do is create a new chat in Claude and paste in this prompt right here. By the way, I'll leave these prompts down in the description and then click enter. And now we got some channel
+1:471 minute, 47 secondsnames. And we want to search them on YouTube like this. As you can see, there's already a big channel with this name, so we're not going to use that one. But this one right here, the gray
+1:551 minute, 55 secondsmatter, there's no big channel that has that name, so we're going to use it. And we've also got a channel description and a full plan in place. Now, we're going
+2:022 minutes, 2 secondsto want a logo and channel art for the channel as well. And if we click this plus button and then we go to connectors
+2:092 minutes, 9 secondsand then go to add connector and click add custom connector right here, then we're going to name this Higsfield and paste in this link right here. Now,
+2:182 minutes, 18 secondsHigsfield is actually the sponsor of this video and they allow you to generate things like pictures and videos directly within Claude. And by the way,
+2:252 minutes, 25 secondsthere is a new update out now as well with Higsfield with Cance 2.0 where they have launched seedance 2.0 0 4K and the
+2:332 minutes, 33 secondsquality is absolutely insane. And in the next video, I'm going to show you exactly how to use it. Then, if we take a look at Apex Psychology, notice how
+2:422 minutes, 42 secondsthey have a character who's the face of the channel. That's incredibly smart because as AI advances, it's going to become easier and easier for people to
+2:502 minutes, 50 secondsrun channels like this. So, we want to make ours stand out by having a character and building IP from our channel. And so once you have your
+2:572 minutes, 57 secondsHigsfield account connected, we can say, "Please generate me a character who will
+3:043 minutes, 4 secondsbe the face of this channel. I want them to be animated, please." Like a simple
+3:123 minutes, 12 seconds2D bubbly animation. And at this point, it may ask you to log in to your Higsfield account if you're not already.
+3:193 minutes, 19 secondsAnd now we've got a concept for the character. I like the second one right here. I think it looks really good. And even gives us an option to recreate if we don't like it. But I think this looks
+3:273 minutes, 27 secondsgreat. And he's wearing a gray sweatshirt, too, which goes with the whole gray matter concept. So, I'll say the second one looks great. Now, make me
+3:353 minutes, 35 secondsa profile picture and channel art for the channel. And then we'll use this template image for it. So, we'll paste
+3:443 minutes, 44 secondsthat in there and say, and use the template to make sure any text or anything is within the safe area of it.
+3:543 minutes, 54 secondsAnd I'm going to request that it uses GPT image 2 for these because it is the highest quality. And wow, this looks
+4:014 minutes, 1 secondgreat. So, this is a perfect profile picture. And look at the channel art. It even put everything in the safe spot that we asked it to. And so, then we upload all of that to YouTube when we're
+4:104 minutes, 10 secondscreating a new channel. And by the way, I have tutorials on exactly how to create your channel and optimize it correctly if you want to watch that. And now it's time for step number three. To
+4:184 minutes, 18 secondsdo this, we're going to take the link of the YouTube channel that we are recreating and then go to Tube Magic and go to video research. This is absolutely
+4:274 minutes, 27 secondsincredible what you can do here. And we're going to create a new channel database and call it Psychology. And then we're going to click add channel.
+4:354 minutes, 35 secondsPaste in that channel link and click add. And then it's going to suggest more channels that we can add. Like this one right here. It looks like it's on our topic. So we're going to click track.
+4:454 minutes, 45 secondsAnd we're going to just keep going down the list and adding these channels by clicking the track button. Here's another one. And another one. And another one.
+5:005 minutesAnd now, just like that, we have added 16 channels. We want to add at least 15 channels for this. And then we're going to click this button that says videos.
+5:095 minutes, 9 secondsFrom here, then we're going to click filters and then sort these by their outlier score. This will find us video ideas that have done really good in
+5:175 minutes, 17 secondscomparison to their channel size. So, the video is doing good on its own merits. For example, this video got 66,000 views on a channel with only
+5:255 minutes, 25 seconds1,000 subscribers. It's doing 50 times better than most of the videos on that channel. So, that's likely a really good
+5:315 minutes, 31 secondsidea. This video got 116,000 views on a channel with only 4,000 subscribers,
+5:385 minutes, 38 secondsgiving us a 39 times outlier. If toxic people hate you, you're doing these five things right. That is a great title. And now the way that we can turbocharge this
+5:475 minutes, 47 secondswith Claude is I have this extension right here downloaded on Chrome and it's called Go Full Page. And if I click this
+5:545 minutes, 54 secondsextension, go ahead and scan through this entire page and take a screenshot of it. And then I'm going to upload that screenshot to Claude right here. And
+6:036 minutes, 3 secondsthen say, "Find me new video ideas for my channel based on these which have
+6:116 minutes, 11 secondsdone really well. Give me 33 different ideas and make them combinationbased
+6:206 minutes, 20 secondsideas. combining two ideas that have worked to make something completely new.
+6:296 minutes, 29 secondsAnd now check out all of these ideas. So it combines two topics like avoidanted people and high IQ people, which are some of the highest viewed videos on
+6:386 minutes, 38 secondsthis list right here. And then it gave us some new ideas that are likely going to work really good. Why the smartest people are almost always avoidant attachers. Or this one about empaths and
+6:476 minutes, 47 secondsdark psychology. the dark psychology of why healing yourself makes toxic people furious. And just like that, we have 33 ideas that are not copying any video
+6:556 minutes, 55 secondsthat's already been done. We're creating brand new videos that are likely to work incredibly good because they're based on what's worked, but we're combining two
+7:037 minutes, 3 secondsto make something new. And now for script writing, we don't just want to go to Claude and say, "Write me a script." It's not going to know how to keep
+7:107 minutes, 10 secondspeople's attention and therefore your videos will not perform as good. But we're still going to use Claude. It's just that we're going to use it within Tube Magic. If we go to the script
+7:187 minutes, 18 secondswriter here, as you can see, this is using Claude Sonnet 4.6 or Opus 4.6, which I would recommend, but it will use more credits. And then we're going to copy the title that we're going to do.
+7:297 minutes, 29 secondsGo to YouTube, paste it in here. But the problem is that when we search this on YouTube, there's not any huge videos with this exact title because we want to
+7:387 minutes, 38 secondsuse it as training data. So instead, we will just search the dark psychology of healing yourself, the first part of that title, and then find some videos that
+7:467 minutes, 46 secondsgot a lot of views, like this one right here. Go to Tube Magic, click the add context button, and paste that in. And then we'll search the second part of
+7:547 minutes, 54 secondsthat title, which is toxic people, and find a video that also got a lot of views, like this one right here, and also paste it in. And then we'll go
+8:028 minutes, 2 secondsahead and paste in our exact title that we're going to do. And then we'll choose for this to be a 10-minute video. And the reason this is so much better than
+8:108 minutes, 10 secondsjust using the base version of Claude is because it's using all of these best viral frameworks to make sure that our video does incredibly good. And now we
+8:188 minutes, 18 secondshave an amazing script and it even gives us some hook options right here. But I think this one is by far the best. And now if we go to Higsfield, which again is the sponsor of this video, and we go
+8:278 minutes, 27 secondsto audio and then voice over, then it brings us to this page. Then if you click voice preset, you can create a custom voice. That is what I would
+8:368 minutes, 36 secondsrecommend for this. But there is a bunch of voices that you can also choose from.
+8:408 minutes, 40 secondsThen you can go ahead and copy this script and paste it here and click generate. Or if you want to do this within Claude, you paste in your script
+8:478 minutes, 47 secondsand you say here's my script voice over it now using the Matt voice
+8:578 minutes, 57 secondsplease and click enter. And then we'll go into Claude and we'll say here is my script. And then we'll paste in the
+9:049 minutes, 4 secondsscript. Please give me video prompts to make animated videos switching the scene
+9:139 minutes, 13 secondsevery 5 seconds at least. And this is very important for audience retention by the way that correspond
+9:229 minutes, 22 secondsto the script. Also make sure to reference the character who will be in every
+9:329 minutes, 32 secondssingle clip. I will attach him as a reference image on all of the videos and
+9:429 minutes, 42 secondsthen we'll click enter. And now we have the prompts. We're going to take the first prompt and copy it. Then go to Higsfield and go to video and choose
+9:509 minutes, 50 secondsCance 2.0. So once we open Higsfield, it looks like this. And we can click to upload media and then select our character right there. And then we
+9:589 minutes, 58 secondsliterally just go through and copy paste each of these prompts right here. It can be really helpful to type at and then select the character to make sure that
+10:0510 minutes, 5 secondsit actually uses them. And for the duration, even though we asked it to do 5 seconds, I like to do at least six to 10 seconds for this. So, we'll do seven
+10:1210 minutes, 12 secondsright there. And then choose Cance 2.0 fast. It's slightly lower quality than Cance 2.0. But if you're not doing like
+10:2010 minutes, 20 secondsinsane visuals and insane fight scenes or something, you do not need it for an animated channel like this. Seance 2.0 Fast is absolutely perfect. And then
+10:2910 minutes, 29 secondswe'll turn the sound off for it. And if you wanted to even do longer clips as well, you can go up to 15 seconds and you can generate multiple at the same
+10:3710 minutes, 37 secondstime depending on the plan that you're on. So, we'll go ahead and click to generate this and we'll just go down the list generating each of these different prompts. So, here's the next prompt.
+10:4710 minutes, 47 seconds[music]
+10:5110 minutes, 51 secondsAnd the cool thing about Cance 2.0 Fast is that it's super fast. We already have some of these clips loading right here, like this one or this one, which also
+10:5810 minutes, 58 secondslooks really amazing. and it corresponds as to what's being talked about in the video. And when we import these clips into a video editor like Cap Cut, we can
+11:0611 minutes, 6 secondssimply drag them onto the timeline just like this, one after another. And then just like that, we have this video right here. Have you ever noticed that the moment you start doing better, certain
+11:1411 minutes, 14 secondspeople in your life suddenly start doing worse? You set a boundary and they explode. You stop apologizing for everything and they act personally
+11:2211 minutes, 22 secondsoffended. You start healing and somehow that becomes a problem for someone else.
+11:2711 minutes, 27 secondsThat is not a coincidence. There's actual psychology behind why your growth triggers other people's rage. And once you understand it, you This is
+11:3411 minutes, 34 secondsfantastic. And it even corresponds as to what's being talked about. So when it's talking about rage, it's got somebody yelling. When it talks about you doing better and other people doing worse,
+11:4211 minutes, 42 secondsit's got the people in the background right there. And this looks really good.
+11:4511 minutes, 45 secondsNow, a common thing you might run into is the clips may not align exactly with the voice over and there may be some gaps. You can just go in and generate some additional clips. But let's say
+11:5311 minutes, 53 secondsyou're really lazy and you don't even want to have to edit videos. You can actually use claude code which you can download onto your computer. You don't have to know any coding whatsoever even
+12:0212 minutes, 2 secondsto use this. And then you can upload a picture of your character as well as the voice over. And then say, make this
+12:0812 minutes, 8 secondsvoice over into a full animated video with the voice over in the background
+12:1512 minutes, 15 secondsfor the entire video. And use the character attached in all of the clips
+12:2412 minutes, 24 secondsthat play throughout the video and change the scenes every 5 seconds at
+12:3312 minutes, 33 secondsleast. Then we want to hit this plus button, go to connectors, and make sure that Higsfield is turned on. And we'll also say make sure the clips shown
+12:4212 minutes, 42 secondsthroughout the video correspond to what is being talked about the voice
+12:4912 minutes, 49 secondsover. Then we'll click enter. And actually just remember that we want to make sure that we're using Cance 2.0 fast for this. So we'll say use Cance
+12:5712 minutes, 57 seconds2.0 fast for all of the clips. and then enter that. And then a bunch of pop-up boxes like this will come up. So, we
+13:0613 minutes, 6 secondsjust have to click allow over and over on those. And as you can see, it says that ffmpeg is available. If you don't have it on your computer, you can download it. That's what it's going to
+13:1513 minutes, 15 secondsuse to stitch everything together and do all of the editing for us. But if you don't have it, you can literally just tell Claude, "Install FFmpeg for me."
+13:2313 minutes, 23 secondsAnd just follow the prompts and it'll do it for you. Let me show you how I would make a ton of money from this. I would go to Claude and I would say, "Find me the perfect affiliate product for this
+13:3213 minutes, 32 secondschannel." and make sure I make at least $50 per sale, ideally over $100 per sale. And then click enter. And boom.
+13:4313 minutes, 43 secondsJust like that, it found me one. Online-therapy.com.
+13:4613 minutes, 46 secondsIt pays $150 per signup. That's exactly what I recommend. They use a 90-day cookie, which means that if somebody doesn't sign up immediately, but they
+13:5413 minutes, 54 secondsbuy 60 days later, you still get the commission. And I would obviously want to vet this website and make sure this is not a scam or anything before I promoted it. But if it looked good, I'd
+14:0214 minutes, 2 secondsclick affiliate right here and I would sign right up. And then I would link that in the description of all of my videos. And I would do that immediately at first just so I could monetize the
+14:1114 minutes, 11 secondsfirst day I started the channel. But in the background, I would work on my own program that I could sell from the channel. That would be a psychology course about the topics that did the
+14:1914 minutes, 19 secondsbest on my channel. And I would sell that anywhere from $97 to $297. And now our Claude code video is done where
+14:2714 minutes, 27 secondsClaude did all of the editing for us and it generated all the clips and put them all together and it gives us the video right here saved to my computer. When I
+14:3514 minutes, 35 secondsopen that video, it looks exactly like this. Have you ever noticed that the moment you start doing better, certain people in your life suddenly start doing worse? You set a boundary and they
+14:4314 minutes, 43 secondsexplode. Fantastic where it has the guy setting the boundary and then the guy exploding up apologizing for everything and they act personally offended. you
+14:5114 minutes, 51 secondsstart healing and somehow that becomes a problem for someone else. That is not a coincidence. There's actual psychology behind why. So that's an amazing video
+15:0015 minuteswhere Claude did all of the work for us editing it together. So now you know that you can 100% do this process and generate videos easily. But generating
+15:0915 minutes, 9 secondsvideos is just the first piece of the puzzle if you want to make this into a real business and be like my students who are building real businesses doing this and make sure that your channel is
+15:1815 minutes, 18 secondsactually safe so it doesn't get banned because I know a lot of people will be in the comments saying YouTube isn't allowing these types of videos. They absolutely are. In fact, YouTube is
+15:2615 minutes, 26 secondsgoing allin on AI, but only the right kind of AI only if you do it the right way. And most people do it the wrong way. So, if you want to learn what that
+15:3415 minutes, 34 secondsright way is, learn the 2026 updates for doing this correctly, and discover how to make this into a real business, then
+15:4115 minutes, 41 secondsyou're going to definitely want to check out this video next to me right here.
+15:4415 minutes, 44 secondsEven if you don't watch it now, bookmark it and make sure to go through this video because it's going to break down exactly how to make this into a real
+15:5215 minutes, 52 secondsbusiness and how to keep your channel safe with some 2026 updates. So, check it out. My name is Matt Parr and I will see you
+
+Sync to video time

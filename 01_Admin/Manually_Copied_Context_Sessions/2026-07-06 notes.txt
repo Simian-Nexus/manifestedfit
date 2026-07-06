@@ -1,0 +1,21 @@
+The plugin exists at 03_Website/wordpress/plugins/manifested-fit-content-engine/ — three files:
+
+manifested-fit-content-engine.php — the whole engine. A "Content Engine" admin page with settings (API key, Telegram, model), a topic queue you paste topics into, a Run Now button, a Send Telegram test button, and an activity log. The runner picks the day's persona (your full schedule is baked in — Mon Frankie/Tue Dana/Wed Nadia/Thu Dana/Fri Rowan, weekends random, 2026 Canadian holidays → Frankie, and Sep 30 / Nov 11 → a short respectful Rowan piece with no CTA), takes the next queued topic, calls the Claude API with structured JSON output (so the title/slug/excerpt/categories/HTML always parse cleanly), creates the post as a draft under the persona's byline — resolved by login name, so the missing Dana/Nadia user IDs no longer matter — sets the RankMath focus keyword, and pings your Telegram with the edit link. Failures (empty queue, API error) also ping Telegram, so silence = nothing to review.
+cron-runner.php — a PHP-CLI fallback for Bluehost cron in case the curl/REST route ever hits shared-hosting timeouts (the AI call takes 1–3 minutes).
+README.md — install steps, the exact cron command (the admin page also displays it with your secret filled in), and cost notes (~$0.07/post on Opus, ~$2/month daily).
+Both PHP files pass php -l, and I've updated NEXT_CONTEXT_BRIEF.md with today's progress.
+
+Your remaining steps to go live (~20 min)
+Anthropic API key — console.anthropic.com → create key, fund $5–10 (paid metered API, separate from your subscription).
+FTP upload the manifested-fit-content-engine folder into /wp-content/plugins/ on the blog (same FileZilla routine as the theme), then activate it in wp-admin.
+In the new Content Engine menu: paste the API key, plus the Telegram token and chat id 6617208680 from 07_Deploy/targets/telegram/config.json. Hit Send Telegram test first.
+Paste some topics into the queue — here's a starter week you can paste straight in (format is topic | editor notes):
+
+Why your Monday dread is actually a manifestation opportunity | reframe, keep it fun
+The 10-minute evening ritual that makes tomorrow easier | practical checklist feel
+What I learned the week I stopped saying "I'm so busy" | story-led, language shapes reality
+Habit stacking for people who quit everything by Thursday | tiny wins, momentum
+Let the week be enough: a Friday wind-down practice | breathwork + gratitude, spacious
+Sleep manifestation: what it is and how to actually try it tonight | Sleep & Rest + Manifestation
+The gentle stretch sequence for desk-wrecked shoulders | Gentle Movement, step by step
+Run Now → draft appears, phone buzzes → tick Enabled, save, and add the daily Bluehost cron (the admin page shows the exact command).
