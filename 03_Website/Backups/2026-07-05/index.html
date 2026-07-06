@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manifested Fit | Mind-Body Wellness Reset</title>
+    <meta name="description" content="Build a gentle daily wellness ritual with the free Manifested Fit 7-day mind-body reset.">
+    <link rel="stylesheet" href="assets/css/styles.css">
+    <link rel="icon" href="assets/images/manifested-fit-logo.png">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a class="brand" href="/">
+          <img src="assets/images/manifested-fit-logo.png" alt="Manifested Fit logo">
+          <span>Manifested Fit</span>
+        </a>
+        <nav class="nav" aria-label="Main navigation">
+          <a href="#reset">Reset</a>
+          <a href="#ritual">Ritual</a>
+          <a href="resources/">Resources</a>
+          <a href="legal/affiliate-disclosure.html">Disclosure</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero__inner">
+          <div class="hero__content">
+            <p class="eyebrow">Mind-body wellness rituals</p>
+            <h1>Manifested Fit</h1>
+            <p class="hero__copy">A calmer way to build fitness momentum by pairing intention, gentle movement, nourishment, and reflection.</p>
+            <form class="lead-form" id="lead-form" data-lead-form action="/api/collect-lead.php" method="post">
+              <input type="hidden" name="lead_magnet" value="7-day-reset">
+              <input type="hidden" name="utm_source">
+              <input type="hidden" name="utm_medium">
+              <input type="hidden" name="utm_campaign">
+              <input type="hidden" name="utm_content">
+              <input type="hidden" name="utm_term">
+              <label>
+                Name
+                <input name="name" type="text" autocomplete="name" required>
+              </label>
+              <label>
+                Email
+                <input name="email" type="email" autocomplete="email" required>
+              </label>
+              <label class="hidden-field">
+                Company
+                <input name="company" type="text" tabindex="-1" autocomplete="off">
+              </label>
+              <button type="submit">Get The Reset</button>
+              <p data-form-message aria-live="polite"></p>
+            </form>
+            <p class="trust-line">Free interactive planner. No miracle claims, no pressure, just a daily ritual you can actually repeat.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="reset">
+        <div class="section__intro">
+          <p class="eyebrow">The first step</p>
+          <h2>A 7-day reset that starts where you are.</h2>
+          <p>Choose your focus, energy level, and available time. The planner gives you a simple daily rhythm that keeps your body included in the vision you are building.</p>
+        </div>
+        <div class="grid">
+          <article class="feature-card">
+            <div class="feature-card__mark">1</div>
+            <h3>Set the intention</h3>
+            <p>Name the version of yourself you are practicing becoming, then make it specific enough to act on today.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-card__mark">2</div>
+            <h3>Move gently</h3>
+            <p>Choose a movement cue that fits your real energy, from a 5-minute mobility reset to a longer walk or flow.</p>
+          </article>
+          <article class="feature-card">
+            <div class="feature-card__mark">3</div>
+            <h3>Reflect honestly</h3>
+            <p>Track what helped, what resisted, and what ritual is small enough to keep repeating tomorrow.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section section--tint" id="ritual">
+        <div class="split">
+          <div>
+            <p class="eyebrow">Why it works</p>
+            <h2>Manifestation gets stronger when your body has a role.</h2>
+            <p>Manifested Fit is built around practical, repeatable cues. The goal is not intensity for its own sake. The goal is evidence: small promises kept, small actions repeated, and a body that starts to trust the direction you are choosing.</p>
+            <ul class="ritual-list">
+              <li>Morning intention before input from the outside world.</li>
+              <li>Movement that matches your energy instead of fighting it.</li>
+              <li>Food, water, and rest cues that support follow-through.</li>
+              <li>Reflection that turns the day into usable feedback.</li>
+            </ul>
+          </div>
+          <aside class="mini-panel">
+            <h3>Affiliate note</h3>
+            <p>Some future recommendations may use affiliate links. If you buy through those links, Manifested Fit may earn a commission at no extra cost to you.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="cta-band">
+          <div>
+            <p class="eyebrow">Start today</p>
+            <h2>Get the free interactive reset.</h2>
+            <p>Use it for seven days, then keep the ritual that gave you the most momentum.</p>
+          </div>
+          <a class="button" href="#lead-form" onclick="document.querySelector('[name=name]').focus();">Get The Reset</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer__inner">
+        <span>&copy; 2026 Manifested Fit</span>
+        <div class="footer__links">
+          <a href="legal/affiliate-disclosure.html">Affiliate Disclosure</a>
+          <a href="legal/privacy.html">Privacy</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="assets/js/config.js"></script>
+    <script src="assets/js/affiliate-offers.js"></script>
+    <script src="assets/js/site.js"></script>
+  </body>
+</html>
