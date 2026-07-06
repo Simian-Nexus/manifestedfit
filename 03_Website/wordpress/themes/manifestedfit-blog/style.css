@@ -1,0 +1,64 @@
+/*
+Theme Name: Manifested Fit Blog
+Theme URI: https://manifestedfit.com/blog
+Description: Brand child theme for the Manifested Fit blog. Inherits Twenty Twenty-Five and applies the Manifested Fit palette (teal/green/plum), Inter typography, and button styling to match manifestedfit.com. Colors and type live in theme.json; this file holds a few extras theme.json can't express.
+Author: Manifested Fit
+Template: twentytwentyfive
+Version: 1.0.0
+Requires at least: 6.6
+Tested up to: 6.8
+License: GNU General Public License v2 or later
+Text Domain: manifestedfit-blog
+*/
+
+/* Brand tokens (mirror of the flat site) */
+:root {
+  --mf-teal: #08736f;
+  --mf-teal-dark: #065d59;
+  --mf-green: #4d9a57;
+  --mf-plum: #8060bb;
+  --mf-line: #dbe5dd;
+  --mf-shadow: 0 10px 26px rgba(8, 115, 111, 0.22);
+}
+
+/* Buttons: match the funnel's shadow + weight (theme.json handles color/radius) */
+.wp-block-button__link {
+  box-shadow: var(--mf-shadow);
+}
+.wp-block-button__link:hover {
+  box-shadow: 0 12px 30px rgba(8, 115, 111, 0.28);
+}
+
+/* Secondary/outline button variant */
+.wp-block-button.is-style-outline .wp-block-button__link {
+  color: var(--mf-teal);
+  background: #fff;
+  border: 1px solid var(--mf-line);
+  box-shadow: none;
+}
+.wp-block-button.is-style-outline .wp-block-button__link:hover {
+  color: #fff;
+  background: var(--mf-teal);
+}
+
+/* Eyebrow-style small caps (add class "mf-eyebrow" to a paragraph) */
+.mf-eyebrow {
+  color: var(--mf-teal);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.4rem;
+}
+
+/* List blocks get a subtle brand accent for step-style content */
+.mf-steps li::marker {
+  color: var(--mf-green);
+  font-weight: 800;
+}
+
+/* Keep embedded YouTube tidy and full-width within content */
+.wp-block-embed-youtube iframe {
+  width: 100%;
+  border-radius: 10px;
+}

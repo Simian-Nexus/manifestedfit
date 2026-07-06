@@ -1,0 +1,80 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/theme.json",
+  "version": 3,
+  "settings": {
+    "appearanceTools": true,
+    "layout": {
+      "contentSize": "760px",
+      "wideSize": "1120px"
+    },
+    "color": {
+      "custom": true,
+      "defaultPalette": false,
+      "defaultGradients": false,
+      "palette": [
+        { "slug": "cream", "name": "Cream", "color": "#fbfaf4" },
+        { "slug": "paper", "name": "Paper", "color": "#ffffff" },
+        { "slug": "ink", "name": "Ink", "color": "#183833" },
+        { "slug": "muted", "name": "Muted", "color": "#5d706b" },
+        { "slug": "teal", "name": "Teal", "color": "#08736f" },
+        { "slug": "green", "name": "Green", "color": "#4d9a57" },
+        { "slug": "leaf", "name": "Leaf", "color": "#d8ead1" },
+        { "slug": "plum", "name": "Plum", "color": "#8060bb" },
+        { "slug": "rose", "name": "Rose", "color": "#c97882" },
+        { "slug": "line", "name": "Line", "color": "#dbe5dd" }
+      ]
+    },
+    "typography": {
+      "fluid": true,
+      "fontFamilies": [
+        {
+          "slug": "inter",
+          "name": "Inter",
+          "fontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        }
+      ]
+    }
+  },
+  "styles": {
+    "color": {
+      "background": "var(--wp--preset--color--cream)",
+      "text": "var(--wp--preset--color--ink)"
+    },
+    "typography": {
+      "fontFamily": "var(--wp--preset--font-family--inter)",
+      "lineHeight": "1.6",
+      "fontSize": "1.05rem"
+    },
+    "elements": {
+      "link": {
+        "color": { "text": "var(--wp--preset--color--teal)" },
+        ":hover": { "color": { "text": "#065d59" } }
+      },
+      "heading": {
+        "color": { "text": "var(--wp--preset--color--ink)" },
+        "typography": { "lineHeight": "1.12", "fontWeight": "800", "letterSpacing": "0" }
+      },
+      "h1": { "typography": { "fontSize": "clamp(2.4rem, 5vw, 3.6rem)", "lineHeight": "1.0" } },
+      "h2": { "typography": { "fontSize": "clamp(1.7rem, 3.2vw, 2.4rem)" } },
+      "h3": { "typography": { "fontSize": "1.25rem" } },
+      "button": {
+        "color": { "background": "var(--wp--preset--color--teal)", "text": "#ffffff" },
+        "border": { "radius": "8px" },
+        "spacing": { "padding": { "top": "0.7rem", "bottom": "0.7rem", "left": "1.15rem", "right": "1.15rem" } },
+        "typography": { "fontWeight": "800" },
+        ":hover": { "color": { "background": "#065d59", "text": "#ffffff" } },
+        ":focus": { "color": { "background": "#065d59", "text": "#ffffff" } }
+      }
+    },
+    "blocks": {
+      "core/quote": {
+        "border": { "left": { "color": "var(--wp--preset--color--green)", "width": "5px", "style": "solid" } },
+        "color": { "background": "var(--wp--preset--color--paper)" },
+        "spacing": { "padding": { "top": "1rem", "bottom": "1rem", "left": "1.25rem", "right": "1.25rem" } }
+      },
+      "core/pullquote": {
+        "color": { "text": "var(--wp--preset--color--plum)" }
+      }
+    }
+  }
+}
