@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-07-05
+Last updated: 2026-07-06
 
 ## July 2026 — active workstream: automated blog + content pipeline
 
@@ -12,7 +12,10 @@ Done and working:
 - Working content pipeline: `07_Deploy/tools/push-draft.ps1` reads git-ignored `07_Deploy/targets/wordpress/config.json`, converts a Markdown file to HTML, auto-creates categories, and posts as a DRAFT via the WP REST API. Proven 2026-07-05.
 - Voice team + day-of-week posting schedule decided (`05_Content/blog/authors-and-schedule.md`); categories defined (`05_Content/blog/categories.md`).
 
-Open next steps: first real week of posts (needs the 4 author user IDs); gate the 7-Day Reset page; build the Bluehost-cron WP plugin (needs a paid AI API key, Anthropic first) for multi-provider auto-drafting; produce the first Lane A video; RankMath-optimize post 1. Safety posture unchanged: drafts only, no auto-publish, credentials stay on Jonathan's side.
+- Content-engine WP plugin (`03_Website/wordpress/plugins/manifested-fit-content-engine/`) is live on the site running Gemini free tier; two-way Telegram (@ManifestedFitBot) works: Publish/Keep/Trash buttons, revise-by-reply, AI chat.
+- Plugin v0.2.0 (2026-07-06, needs re-upload): drafts include a `[VIDEO EMBED]` placeholder + AI video brief meta, and three secret-guarded REST endpoints (`video-queue`/`video-ready`/`video-embed`) let an external video worker attach approved YouTube videos with Telegram approval buttons. Plan: `06_Planning/VIDEO_PIPELINE_PLAN.md`.
+
+Open next steps: re-upload plugin v0.2.0, add topics to the queue, create the Bluehost cPanel daily cron (then daily drafting is fully automatic); build the local video worker (edge-tts + Pexels + ffmpeg + YouTube API per the plan); first real week of posts; gate the 7-Day Reset page; RankMath-optimize post 1. Safety posture unchanged: drafts only, publish only via Jonathan's Telegram approval, credentials stay on Jonathan's side.
 
 ## Project Shape
 

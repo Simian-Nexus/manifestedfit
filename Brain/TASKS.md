@@ -7,6 +7,17 @@
 - First real blog post drafted: `05_Content/blog/post-01-morning-reset-ritual.md` — needs Jonathan's own YouTube video embedded before publish.
 - Next: brand the blog (teal/green/plum + logo), confirm `/blog` is linked from the main funnel nav, publish post 1 once a video exists.
 
+## Content engine + video pipeline (added 2026-07-06)
+
+- Re-upload plugin v0.2.0 (`03_Website/wordpress/plugins/manifested-fit-content-engine/`) via FTP - adds [VIDEO EMBED] placeholder, video briefs, and the video REST endpoints.
+- Add ~2 weeks of topics to the plugin's topic queue (it is empty; the daily cron fails loudly on an empty queue).
+- Create the Bluehost cPanel daily cron (command shown on the plugin admin page) and tick Enabled.
+- Verify a Run Now draft contains the [VIDEO EMBED] paragraph and `mfce_video_brief` meta.
+- Google Cloud project + YouTube Data API OAuth credentials (start the API audit early - unverified apps upload locked/private).
+- Get a Pexels and/or Pixabay API key for stock b-roll.
+- Build `video_worker.py` per `06_Planning/VIDEO_PIPELINE_PLAN.md` and schedule it 2x daily via Task Scheduler.
+- End-to-end dry run: draft -> video -> Telegram approve -> YouTube -> embedded -> publish via Telegram button.
+
 ## Next
 
 - Use `06_Planning/AFFILIATE_APPLICATION_READINESS.md` as the next session's strategy anchor.

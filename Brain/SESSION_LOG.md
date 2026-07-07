@@ -30,3 +30,12 @@
 - Added `06_Planning/AFFILIATE_APPLICATION_READINESS.md` to focus the next fresh context on audience proof and application readiness before applying to selective affiliate programs.
 - Added `06_Planning/HERMES_SOCIAL_AGENT_WORKFLOW_BRIEF.md` to connect Manifested Fit growth work with the Hermes/AI Command Bridge Agent Studio direction.
 - Updated `NEXT_CONTEXT_BRIEF.md`, `Brain/CURRENT_STATE.md`, and `Brain/TASKS.md` so future sessions know the user has minimal current niche social presence and wants a supervised social media assistance workflow.
+
+## 2026-07-06 (late session)
+
+- Plugin confirmed live on the site with Gemini free tier; two-way Telegram chat verified working. Noted a historical Telegram 403 ("bot can't message the bot") from a briefly-wrong chat_id.
+- Built plugin v0.2.0 (video pipeline, blog side): prompt-enforced [VIDEO EMBED] placeholder + structured video_brief post meta on every non-solemn draft; REST endpoints video-queue / video-ready / video-embed (cron-secret guarded); Telegram Approve video / Reject video buttons; video-embed swaps the placeholder for a responsive YouTube embed block and re-notifies with Publish buttons; revise-by-reply now shields the placeholder/embed from the AI. PHP lint clean. Needs re-upload via FTP.
+- Wrote 06_Planning/VIDEO_PIPELINE_PLAN.md: external worker loop, Option A recommendation (free local Python worker: edge-tts + Pexels/Pixabay + ffmpeg + YouTube Data API, Task Scheduler 2x daily), Make.com alternative, YouTube OAuth setup notes.
+- Immediate go-live items identified: add topics to the queue (it is empty) and create the Bluehost cPanel daily cron.
+- Plugin v0.3.0 (same session): accordion admin page (details/summary sections), inline-editable topics with per-topic persona + provider/model overrides, AI topic fallback when the queue is empty (day/holiday/weekend/persona/recent-titles aware, flagged in queue + Telegram). Advised on cPanel cron fields.
+- Plugin v0.4.0: model dropdowns per provider (known ids + free-text override; Anthropic list incl. claude-fable-5/claude-sonnet-5, default stays claude-opus-4-8); "Ask AI to plan the queue" button with custom-instructions box -> proposal stored and shown in a review modal with Apply (replaces pending queue) / Discard. Advised exact cPanel cron fields (0 6 * * * + curl command) and flagged that Jonathan's pasted topic list added notes lines as separate topics. Anthropic key now obtained.
