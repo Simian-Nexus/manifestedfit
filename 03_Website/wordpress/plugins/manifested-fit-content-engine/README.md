@@ -13,9 +13,31 @@ notification with the review link. **It never publishes anything.**
 - Personas resolved by WP login name (DanaCole, FrankieMoon, NadiaBrooks, RowanEllis) - no user IDs needed.
 - Categories assigned by name from the fixed six (created if missing).
 - RankMath focus keyword set on each draft (`rank_math_focus_keyword` meta).
+- Every non-solemn draft contains a `<p>[VIDEO EMBED]</p>` placeholder and a
+  YouTube `video_brief` (title, description, 60-90s voiceover script, visual
+  direction) stored as post meta for the external video workflow.
 - Structured JSON output from the Claude API - no fragile text parsing.
 - At most one draft per calendar day from cron (Run Now can force extras).
-- Failures (empty queue, API error, missing key) are Telegram-notified so silence means "nothing to do".
+- Pending topics are editable in place on the admin page (title, notes) and can
+  pin a persona and/or an AI provider + model for that one post, overriding the
+  day-of-week schedule and the default provider from settings.
+- If the queue is empty, the AI picks today's topic itself (day of week,
+  holidays/weekends, persona voice, and the last ~12 post titles considered so
+  it can avoid repeats or continue a theme). Toggleable in settings
+  ("AI topic fallback"); AI-picked topics are flagged in the queue and in the
+  Telegram notice.
+- The admin page is organized into collapsible sections: Status & actions,
+  Engine & AI provider settings, Telegram settings, Cron & video endpoints,
+  Topic queue, Recent activity.
+- Model pickers are dropdowns of known model ids per provider (Anthropic
+  default claude-opus-4-8; claude-fable-5, claude-sonnet-5 etc. included),
+  each with a free-text override box for models newer than the plugin.
+- "Ask AI to plan the queue": the AI reads the current queue, recent posts,
+  persona schedule, season/holidays plus your free-text instructions (e.g.
+  "make a couple of week-long seasonal series") and proposes a 10-20 topic
+  plan shown in a review popup - Apply replaces the pending queue (used
+  history kept), Discard leaves everything untouched.
+- Failures (API error, missing key) are Telegram-notified so silence means "nothing to do".
 
 ## Install
 
@@ -76,6 +98,34 @@ strict `json_schema` mode; the custom provider degrades gracefully
 (`json_schema` -> `json_object` -> prompt-enforced JSON with code-fence
 stripping) so smaller local models still produce parseable drafts. Model
 name fields are free text, so new models need no plugin update.
+
+## Video pipeline (plugin side)
+
+Each non-solemn draft is born with `mfce_video_status = needed`, a
+`[VIDEO EMBED]` placeholder paragraph, and an AI-written `mfce_video_brief`
+(JSON post meta). An external workflow (local script, Make.com, etc.) drives
+the rest through three REST endpoints, all guarded by the same cron secret
+(exact URLs are shown on the plugin admin page):
+
+1. `GET /wp-json/mfce/v1/video-queue?secret=X` - posts that need a video,
+   with their briefs and current status. The workflow polls this.
+2. `POST /wp-json/mfce/v1/video-ready?secret=X&post_id=N&preview_url=URL` -
+   call after rendering (e.g. an unlisted YouTube upload). Telegram pings the
+   owner with **Approve video / Reject video** buttons; approval sets
+   `mfce_video_status = approved`, rejection `rejected` (both visible in the
+   next queue poll, so the workflow knows to proceed or regenerate).
+3. `POST /wp-json/mfce/v1/video-embed?secret=X&post_id=N&youtube_url=URL` -
+   call after the approved video is live on YouTube. The placeholder becomes a
+   proper responsive YouTube embed block, `mfce_video_status = embedded`, and
+   Telegram sends the "video is now embedded" notice with the usual
+   Publish / Keep / Trash buttons.
+
+Status flow: `needed → review → approved|rejected → embedded`. The
+revise-by-reply flow shields the placeholder/embed from the AI, so revisions
+cannot mangle the video. Solemn-day reflections never get a video.
+
+See `06_Planning/VIDEO_PIPELINE_PLAN.md` in the repo for the workflow-side
+plan (video generation, YouTube upload, scheduling).
 
 ## Bluehost cron
 

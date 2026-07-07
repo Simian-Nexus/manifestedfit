@@ -31,3 +31,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Contains live secrets (cron URL with cron_secret) - never commit
+01_Admin/example cron.txt

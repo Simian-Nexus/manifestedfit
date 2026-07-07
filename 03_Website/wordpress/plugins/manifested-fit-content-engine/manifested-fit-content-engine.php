@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Manifested Fit Content Engine
- * Description: Supervised AI drafting engine. A daily cron (or the Run Now button) picks the day's persona and next queued topic, asks Claude to write the post, saves it as a DRAFT under the persona's byline, and sends a Telegram notification for review. Nothing is ever auto-published.
- * Version: 0.1.0
+ * Description: Supervised AI drafting engine. A daily cron (or the Run Now button) picks the day's persona and next queued topic, asks the AI to write the post (with a [VIDEO EMBED] placeholder and a YouTube video brief), saves it as a DRAFT under the persona's byline, and sends a Telegram notification for review. A companion video workflow can fetch briefs and attach approved YouTube videos via REST. Nothing is ever auto-published.
+ * Version: 0.4.0
  * Author: Spinning Monkey Studios
  */
 
@@ -47,6 +47,20 @@ class MFCE_Engine {
         return array('Manifestation', 'Mindset', 'Rituals & Routines', 'Gentle Movement', 'Sleep & Rest', 'Recipes');
     }
 
+    /**
+     * Known model ids per provider for the settings dropdowns (curated 2026-07).
+     * The dropdown also offers a free-text override, so new models never require
+     * a plugin update - this list just prevents typos for the common cases.
+     */
+    public static function known_models() {
+        return array(
+            'anthropic' => array('claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'),
+            'gemini'    => array('gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'),
+            'openai'    => array('gpt-5.1', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o'),
+            'grok'      => array('grok-4', 'grok-4-fast', 'grok-3', 'grok-3-mini'),
+        );
+    }
+
     /** Canadian statutory holidays -> Frankie. Format: m-d => label. */
     public static function holidays_2026() {
         return array(
@@ -78,7 +92,11 @@ class MFCE_Engine {
         add_action('admin_menu', array(__CLASS__, 'admin_menu'));
         add_action('admin_post_mfce_save_settings', array(__CLASS__, 'handle_save_settings'));
         add_action('admin_post_mfce_add_topics', array(__CLASS__, 'handle_add_topics'));
+        add_action('admin_post_mfce_update_topic', array(__CLASS__, 'handle_update_topic'));
         add_action('admin_post_mfce_delete_topic', array(__CLASS__, 'handle_delete_topic'));
+        add_action('admin_post_mfce_plan_topics', array(__CLASS__, 'handle_plan_topics'));
+        add_action('admin_post_mfce_apply_plan', array(__CLASS__, 'handle_apply_plan'));
+        add_action('admin_post_mfce_discard_plan', array(__CLASS__, 'handle_discard_plan'));
         add_action('admin_post_mfce_run_now', array(__CLASS__, 'handle_run_now'));
         add_action('admin_post_mfce_test_telegram', array(__CLASS__, 'handle_test_telegram'));
         add_action('admin_post_mfce_register_webhook', array(__CLASS__, 'handle_register_webhook'));
@@ -88,6 +106,7 @@ class MFCE_Engine {
     public static function defaults() {
         return array(
             'enabled'            => 0,
+            'auto_topic'         => 1, // queue empty -> the AI invents today's topic
             'provider'           => 'anthropic', // anthropic | gemini | openai | grok | custom
             'anthropic_api_key'  => '',
             'model'              => 'claude-opus-4-8',
@@ -181,12 +200,6 @@ class MFCE_Engine {
 
         $pick = self::persona_for_date($now);
         $personas = self::personas();
-        $persona = $personas[$pick['persona']];
-
-        $author = get_user_by('login', $persona['login']);
-        if (!$author) {
-            return self::finish(false, 'WP user not found for persona login "' . $persona['login'] . '".', null, true);
-        }
 
         // Solemn days write a fixed-purpose piece and do not consume a queue topic.
         $topic = null;
@@ -197,14 +210,47 @@ class MFCE_Engine {
             );
         } else {
             $topic = self::next_topic();
-            if (!$topic) {
-                return self::finish(false, 'Topic queue is empty - add topics in the Content Engine admin page.', null, true);
+            // A topic can pin a specific persona, overriding the day-of-week schedule.
+            if ($topic && !empty($topic['persona']) && isset($personas[$topic['persona']])) {
+                $pick['persona'] = $topic['persona'];
             }
         }
 
-        $result = self::generate_post($s, $persona, $pick, $topic);
+        $persona = $personas[$pick['persona']];
+        $author = get_user_by('login', $persona['login']);
+        if (!$author) {
+            return self::finish(false, 'WP user not found for persona login "' . $persona['login'] . '".', null, true);
+        }
+
+        // Queue empty: either the AI invents today's topic, or we stop loudly.
+        if (!$topic) {
+            if (empty($s['auto_topic'])) {
+                return self::finish(false, 'Topic queue is empty - add topics in the Content Engine admin page.', null, true);
+            }
+            $topic = self::auto_topic($s, $persona, $pick, $now);
+            if (is_wp_error($topic)) {
+                return self::finish(false, 'Topic queue empty and AI topic pick failed: ' . $topic->get_error_message(), null, true);
+            }
+        }
+
+        // A topic can also pin a provider (and optionally a model). Fall back to
+        // the default provider if the override has no key configured.
+        $gen_s = $s;
+        if (!empty($topic['provider'])) {
+            $gen_s['provider'] = $topic['provider'];
+            if (!empty($topic['model'])) {
+                $model_keys = array('anthropic' => 'model', 'gemini' => 'gemini_model', 'openai' => 'openai_model', 'grok' => 'grok_model', 'custom' => 'custom_model');
+                if (isset($model_keys[$gen_s['provider']])) { $gen_s[$model_keys[$gen_s['provider']]] = $topic['model']; }
+            }
+            if (!self::provider_ready($gen_s)) {
+                self::log('WARN: topic wanted provider "' . $topic['provider'] . '" but it has no key - using the default provider instead.');
+                $gen_s = $s;
+            }
+        }
+
+        $result = self::generate_post($gen_s, $persona, $pick, $topic);
         if (is_wp_error($result)) {
-            return self::finish(false, 'Claude call failed: ' . $result->get_error_message(), null, true);
+            return self::finish(false, 'AI call failed (' . self::provider_label($gen_s) . '): ' . $result->get_error_message(), null, true);
         }
 
         // Resolve categories by name, creating them if missing.
@@ -239,6 +285,14 @@ class MFCE_Engine {
             update_post_meta($post_id, 'rank_math_focus_keyword', sanitize_text_field($result['focus_keyword']));
         }
 
+        // Video pipeline: solemn pieces get no video; everything else waits for one.
+        if ($pick['mode'] !== 'solemn') {
+            update_post_meta($post_id, 'mfce_video_status', 'needed');
+            if (!empty($result['video_brief']) && is_array($result['video_brief'])) {
+                update_post_meta($post_id, 'mfce_video_brief', wp_json_encode($result['video_brief']));
+            }
+        }
+
         if ($pick['mode'] !== 'solemn' && isset($topic['id'])) {
             self::mark_topic_used($topic['id'], $post_id);
         }
@@ -251,6 +305,7 @@ class MFCE_Engine {
         $msg = "Manifested Fit Engine\n"
              . "New draft by {$persona['name']} (" . $now->format('D M j') . ", {$pick['mode']}):\n"
              . '"' . $result['title'] . "\"\n"
+             . (!empty($topic['auto']) ? "Topic was AI-chosen (the queue was empty).\n" : '')
              . "Review: {$edit_url}";
         self::telegram_send_draft_notice($s, $post_id, $msg);
 
@@ -285,6 +340,11 @@ class MFCE_Engine {
             . "- focus_keyword: the 2-4 word phrase the post should rank for.\n"
             . "- categories: pick 1 (max 2) from exactly this list: " . implode(', ', $cats) . '.';
 
+        if ($pick['mode'] !== 'solemn') {
+            $system .= "\n- Include exactly one paragraph whose entire content is the text [VIDEO EMBED], i.e. <p>[VIDEO EMBED]</p>, placed where a short companion video fits best (usually right after the intro, or just before the step-by-step section). It is replaced with a real YouTube video later, so do not reference \"the video above/below\" anywhere in the text."
+                . "\n- video_brief: a production plan for a 60-90 second faceless YouTube companion video for this exact post. youtube_title: max 90 characters, curiosity-driven, not clickbait-dishonest. youtube_description: 2-3 sentences ending with 'Full article: {POST_URL}' (keep that placeholder literally). voiceover_script: only the spoken words, 150-220 words, in the persona's voice, standalone (a viewer who never reads the post should still get value). visual_direction: shot-by-shot guidance (b-roll, stock-footage keywords, on-screen text overlays) that an editor or AI video tool can follow.";
+        }
+
         $user = "Write today's blog post.\n\nTopic: {$topic['title']}";
         if (!empty($topic['notes'])) {
             $user .= "\n\nEditor notes: {$topic['notes']}";
@@ -306,6 +366,21 @@ class MFCE_Engine {
             'required' => array('title', 'slug', 'excerpt', 'focus_keyword', 'categories', 'content_html'),
             'additionalProperties' => false,
         );
+
+        if ($pick['mode'] !== 'solemn') {
+            $schema['properties']['video_brief'] = array(
+                'type' => 'object',
+                'properties' => array(
+                    'youtube_title'       => array('type' => 'string'),
+                    'youtube_description' => array('type' => 'string'),
+                    'voiceover_script'    => array('type' => 'string'),
+                    'visual_direction'    => array('type' => 'string'),
+                ),
+                'required' => array('youtube_title', 'youtube_description', 'voiceover_script', 'visual_direction'),
+                'additionalProperties' => false,
+            );
+            $schema['required'][] = 'video_brief';
+        }
 
         $parsed = self::ai_json($s, $system, $user, $schema);
         if (is_wp_error($parsed)) { return $parsed; }
@@ -610,9 +685,19 @@ class MFCE_Engine {
             if ($author && $p['login'] === $author->user_login) { $voice = 'Persona voice: ' . $p['voice']; break; }
         }
 
+        // Shield the video from the model: swap any embedded video block for the
+        // plain placeholder before revising, and restore it afterwards.
+        $content_for_ai = $post->post_content;
+        $video_block = '';
+        if (preg_match('/<!-- wp:embed\b.*?<!-- \/wp:embed -->/s', $content_for_ai, $vm)) {
+            $video_block = $vm[0];
+            $content_for_ai = str_replace($video_block, '<p>[VIDEO EMBED]</p>', $content_for_ai);
+        }
+
         $system = "You are revising a draft blog post for Manifested Fit (wellness/manifestation blog). {$voice}\n"
-            . "Apply the editor's instructions while keeping the persona voice, honesty guardrails (no fabricated credentials, no medical or income claims) and clean HTML (<h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <a> only).";
-        $user = "Editor's instructions: {$instructions}\n\nCurrent title: {$post->post_title}\n\nCurrent excerpt: {$post->post_excerpt}\n\nCurrent HTML:\n{$post->post_content}";
+            . "Apply the editor's instructions while keeping the persona voice, honesty guardrails (no fabricated credentials, no medical or income claims) and clean HTML (<h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <a> only).\n"
+            . "If the draft contains a paragraph that is exactly [VIDEO EMBED], keep that paragraph unchanged (you may relocate it only if the instructions ask) - it marks where a companion video sits.";
+        $user = "Editor's instructions: {$instructions}\n\nCurrent title: {$post->post_title}\n\nCurrent excerpt: {$post->post_excerpt}\n\nCurrent HTML:\n{$content_for_ai}";
         $schema = array(
             'type' => 'object',
             'properties' => array(
@@ -627,16 +712,91 @@ class MFCE_Engine {
         $parsed = self::ai_json($s, $system, $user, $schema);
         if (is_wp_error($parsed)) { return $parsed; }
 
+        $new_content = wp_kses_post($parsed['content_html']);
+        if ($video_block !== '') {
+            $new_content = self::insert_video_markup($new_content, $video_block);
+        }
+
+        kses_remove_filters(); // webhook runs unauthenticated; see attach_video()
         $updated = wp_update_post(array(
             'ID'           => $post_id,
             'post_title'   => wp_strip_all_tags($parsed['title']),
             'post_excerpt' => sanitize_text_field($parsed['excerpt']),
-            'post_content' => wp_kses_post($parsed['content_html']),
+            'post_content' => $new_content,
         ), true);
+        kses_init_filters();
         if (is_wp_error($updated)) { return $updated; }
 
         self::log('OK: draft #' . $post_id . ' revised via Telegram.');
         return $parsed;
+    }
+
+    // --------------------------------------------------------------- video
+
+    /** Matches the placeholder the AI is told to leave in every non-solemn post. */
+    const VIDEO_PLACEHOLDER = '/<p>\s*\[VIDEO EMBED\]\s*<\/p>|\[VIDEO EMBED\]/i';
+
+    /** Accepts a bare YouTube ID or any usual URL form; returns the ID or ''. */
+    public static function youtube_id($input) {
+        $input = trim((string) $input);
+        if (preg_match('/^[A-Za-z0-9_-]{6,20}$/', $input)) { return $input; }
+        if (preg_match('~(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{6,20})~', $input, $m)) { return $m[1]; }
+        return '';
+    }
+
+    /** Gutenberg embed block for a YouTube URL - survives kses and renders responsively. */
+    private static function video_embed_block($url) {
+        $attrs = wp_json_encode(array(
+            'url'              => $url,
+            'type'             => 'video',
+            'providerNameSlug' => 'youtube',
+            'responsive'       => true,
+            'className'        => 'wp-embed-aspect-16-9 wp-has-aspect-ratio',
+        ));
+        return "<!-- wp:embed {$attrs} -->\n"
+            . '<figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio"><div class="wp-block-embed__wrapper">' . "\n"
+            . $url . "\n"
+            . "</div></figure>\n<!-- /wp:embed -->";
+    }
+
+    /** Swap the [VIDEO EMBED] placeholder for $markup; fall back to after the first paragraph. */
+    private static function insert_video_markup($content, $markup) {
+        if (preg_match(self::VIDEO_PLACEHOLDER, $content)) {
+            return preg_replace_callback(self::VIDEO_PLACEHOLDER, function () use ($markup) {
+                return $markup;
+            }, $content, 1);
+        }
+        $pos = stripos($content, '</p>');
+        if ($pos !== false) {
+            return substr_replace($content, "\n" . $markup . "\n", $pos + 4, 0);
+        }
+        return $markup . "\n" . $content;
+    }
+
+    /** Embed an approved YouTube video into a draft and notify Telegram. */
+    private static function attach_video($s, $post_id, $youtube_url) {
+        $post = get_post($post_id);
+        if (!$post) {
+            return new WP_Error('mfce_gone', 'Post #' . $post_id . ' does not exist.');
+        }
+        $content = self::insert_video_markup($post->post_content, self::video_embed_block($youtube_url));
+
+        // This REST call runs unauthenticated, so kses would strip the embed block's
+        // comments/JSON. The markup is built entirely by us from a validated video ID,
+        // so lifting kses for this one controlled update is safe.
+        kses_remove_filters();
+        $updated = wp_update_post(array('ID' => $post_id, 'post_content' => $content), true);
+        kses_init_filters();
+        if (is_wp_error($updated)) { return $updated; }
+
+        update_post_meta($post_id, 'mfce_video_status', 'embedded');
+        update_post_meta($post_id, 'mfce_youtube_url', esc_url_raw($youtube_url));
+        self::log('OK: video embedded in post #' . $post_id . ' (' . $youtube_url . ').');
+
+        $edit_url = admin_url('post.php?post=' . $post_id . '&action=edit');
+        self::telegram_send_draft_notice($s, $post_id,
+            "Manifested Fit Engine\nVideo is now embedded in the draft:\n\"{$post->post_title}\"\nWatch: {$youtube_url}\nReview: {$edit_url}");
+        return true;
     }
 
     // -------------------------------------------------------------- topics
@@ -651,6 +811,60 @@ class MFCE_Engine {
             if (isset($topic['status']) && $topic['status'] === 'pending') { return $topic; }
         }
         return null;
+    }
+
+    /**
+     * Queue is empty: ask the AI to pick today's topic itself, considering the
+     * day of week, holidays/weekends, the persona, and recent posts (so it can
+     * avoid repeats or deliberately continue a theme/series). The picked topic
+     * is appended to the queue so it shows up in the admin table like any other.
+     */
+    private static function auto_topic($s, $persona, $pick, $now) {
+        $recent = array();
+        foreach (get_posts(array('post_status' => array('publish', 'draft', 'pending'), 'numberposts' => 12, 'orderby' => 'date', 'order' => 'DESC')) as $p) {
+            $recent[] = $p->post_title;
+        }
+
+        $system = 'You are the content planner for Manifested Fit (manifestedfit.com/blog), a wellness brand blending manifestation, gentle fitness, and mindset for everyday people. '
+            . 'Pick ONE topic for today\'s post. Practical and doable beats abstract. No medical claims, no income promises. '
+            . 'Categories the blog covers: ' . implode(', ', self::categories()) . '.';
+
+        $user = 'Today is ' . $now->format('l, F j, Y') . '.'
+            . ($pick['mode'] === 'holiday' ? ' It is ' . $pick['occasion'] . ' in Canada - a celebratory angle is welcome.' : '')
+            . ((int) $now->format('N') >= 6 ? ' It is the weekend - lighter, restorative topics fit well.' : '')
+            . "\n\nToday's columnist is {$persona['name']}. Voice: {$persona['voice']}"
+            . "\n\nRecent post titles (avoid repeating these; if several form a natural theme or series, you MAY continue it with a clearly next-step topic):\n- "
+            . ($recent ? implode("\n- ", $recent) : '(no posts yet)')
+            . "\n\nReturn the topic title and short editor notes (the angle, and 2-3 things the post must cover).";
+
+        $schema = array(
+            'type' => 'object',
+            'properties' => array(
+                'title' => array('type' => 'string'),
+                'notes' => array('type' => 'string'),
+            ),
+            'required' => array('title', 'notes'),
+            'additionalProperties' => false,
+        );
+
+        $parsed = self::ai_json($s, $system, $user, $schema);
+        if (is_wp_error($parsed)) { return $parsed; }
+        if (empty($parsed['title'])) {
+            return new WP_Error('mfce_autotopic', 'The AI returned no topic title.');
+        }
+
+        $topic = array(
+            'id'     => uniqid('t'),
+            'title'  => sanitize_text_field($parsed['title']),
+            'notes'  => sanitize_text_field($parsed['notes'] ?? ''),
+            'status' => 'pending',
+            'auto'   => 1,
+        );
+        $topics = self::topics();
+        $topics[] = $topic;
+        update_option(self::OPT_TOPICS, $topics, false);
+        self::log('OK: queue was empty - AI picked today\'s topic: "' . $topic['title'] . '"');
+        return $topic;
     }
 
     private static function mark_topic_used($id, $post_id) {
@@ -742,6 +956,105 @@ class MFCE_Engine {
             'permission_callback' => '__return_true', // guarded by Telegram's secret-token header below
             'callback'            => array(__CLASS__, 'handle_telegram_webhook'),
         ));
+
+        // ------------------------- video pipeline (external workflow talks to these)
+
+        // What needs a video? Returns briefs plus the current approval status,
+        // so the workflow can also see vidok/vidno button decisions.
+        register_rest_route('mfce/v1', '/video-queue', array(
+            'methods'             => 'GET',
+            'permission_callback' => '__return_true', // guarded by the cron secret
+            'callback'            => function ($request) {
+                $err = self::check_cron_secret($request);
+                if ($err) { return $err; }
+                $posts = get_posts(array(
+                    'post_status' => array('draft', 'pending', 'publish'),
+                    'numberposts' => 20,
+                    'orderby'     => 'ID',
+                    'order'       => 'ASC',
+                    'meta_query'  => array(array(
+                        'key'     => 'mfce_video_status',
+                        'value'   => array('needed', 'review', 'approved', 'rejected'),
+                        'compare' => 'IN',
+                    )),
+                ));
+                $out = array();
+                foreach ($posts as $p) {
+                    $brief = json_decode((string) get_post_meta($p->ID, 'mfce_video_brief', true), true);
+                    $out[] = array(
+                        'post_id'      => $p->ID,
+                        'title'        => $p->post_title,
+                        'post_status'  => $p->post_status,
+                        'permalink'    => get_permalink($p->ID),
+                        'video_status' => get_post_meta($p->ID, 'mfce_video_status', true),
+                        'preview_url'  => get_post_meta($p->ID, 'mfce_video_preview_url', true),
+                        'video_brief'  => is_array($brief) ? $brief : null,
+                    );
+                }
+                return rest_ensure_response($out);
+            },
+        ));
+
+        // The workflow rendered/uploaded a preview: ask the human to approve it.
+        register_rest_route('mfce/v1', '/video-ready', array(
+            'methods'             => 'POST',
+            'permission_callback' => '__return_true', // guarded by the cron secret
+            'callback'            => function ($request) {
+                $err = self::check_cron_secret($request);
+                if ($err) { return $err; }
+                $post_id = (int) $request->get_param('post_id');
+                $preview = esc_url_raw((string) $request->get_param('preview_url'));
+                $post    = get_post($post_id);
+                if (!$post) {
+                    return new WP_Error('mfce_gone', 'Post not found.', array('status' => 404));
+                }
+                if (!$preview) {
+                    return new WP_Error('mfce_bad', 'preview_url is required.', array('status' => 400));
+                }
+                update_post_meta($post_id, 'mfce_video_status', 'review');
+                update_post_meta($post_id, 'mfce_video_preview_url', $preview);
+                self::log('OK: video for post #' . $post_id . ' is awaiting approval.');
+                $s = self::settings();
+                $keyboard = array('inline_keyboard' => array(array(
+                    array('text' => 'Approve video', 'callback_data' => 'vidok:' . $post_id),
+                    array('text' => 'Reject video',  'callback_data' => 'vidno:' . $post_id),
+                )));
+                self::telegram_send($s,
+                    "Manifested Fit Engine\nVideo ready for review (post: \"{$post->post_title}\"):\n{$preview}\n\nApprove to have it uploaded/embedded, or reject to regenerate.",
+                    array('reply_markup' => $keyboard));
+                return rest_ensure_response(array('ok' => true, 'video_status' => 'review'));
+            },
+        ));
+
+        // Final step: swap the [VIDEO EMBED] placeholder for the real YouTube embed.
+        register_rest_route('mfce/v1', '/video-embed', array(
+            'methods'             => 'POST',
+            'permission_callback' => '__return_true', // guarded by the cron secret
+            'callback'            => function ($request) {
+                $err = self::check_cron_secret($request);
+                if ($err) { return $err; }
+                $post_id = (int) $request->get_param('post_id');
+                $vid     = self::youtube_id((string) $request->get_param('youtube_url'));
+                if (!$vid) {
+                    return new WP_Error('mfce_bad', 'youtube_url must be a YouTube URL or video ID.', array('status' => 400));
+                }
+                $result = self::attach_video(self::settings(), $post_id, 'https://www.youtube.com/watch?v=' . $vid);
+                if (is_wp_error($result)) {
+                    return new WP_Error('mfce_embed', $result->get_error_message(), array('status' => 400));
+                }
+                return rest_ensure_response(array('ok' => true, 'video_status' => 'embedded'));
+            },
+        ));
+    }
+
+    /** Shared guard for the cron/video REST endpoints. Returns WP_Error or null. */
+    private static function check_cron_secret($request) {
+        $s = self::settings();
+        $secret = (string) $request->get_param('secret');
+        if (empty($s['cron_secret']) || !hash_equals($s['cron_secret'], $secret)) {
+            return new WP_Error('mfce_forbidden', 'Bad secret.', array('status' => 403));
+        }
+        return null;
     }
 
     // ---------------------------------------------------- telegram webhook
@@ -791,12 +1104,25 @@ class MFCE_Engine {
 
         self::tg_api($s, 'answerCallbackQuery', array('callback_query_id' => $cb['id']));
 
-        if (!preg_match('/^(publish|keep|trash):(\d+)$/', (string) $cb['data'], $m)) { return; }
+        if (!preg_match('/^(publish|keep|trash|vidok|vidno):(\d+)$/', (string) $cb['data'], $m)) { return; }
         $action  = $m[1];
         $post_id = (int) $m[2];
         $post    = get_post($post_id);
         if (!$post) {
             self::telegram_send($s, 'Post #' . $post_id . ' no longer exists.');
+            return;
+        }
+
+        if ($action === 'vidok') {
+            update_post_meta($post_id, 'mfce_video_status', 'approved');
+            self::log('OK: video for post #' . $post_id . ' APPROVED via Telegram.');
+            self::telegram_send($s, "Video approved for \"{$post->post_title}\". The video workflow will upload it to YouTube and embed it in the draft on its next pass, then notify you here.");
+            return;
+        }
+        if ($action === 'vidno') {
+            update_post_meta($post_id, 'mfce_video_status', 'rejected');
+            self::log('OK: video for post #' . $post_id . ' rejected via Telegram.');
+            self::telegram_send($s, "Video rejected for \"{$post->post_title}\". The workflow will see the rejection and can regenerate it. If the article itself needs changes, reply to its draft notification.");
             return;
         }
 
@@ -873,12 +1199,15 @@ class MFCE_Engine {
         check_admin_referer('mfce_save_settings');
         $s = self::settings();
         $s['enabled']            = isset($_POST['enabled']) ? 1 : 0;
+        $s['auto_topic']         = isset($_POST['auto_topic']) ? 1 : 0;
         $provider                = sanitize_text_field(wp_unslash($_POST['provider'] ?? 'anthropic'));
         $s['provider']           = in_array($provider, array('anthropic', 'gemini', 'openai', 'grok', 'custom'), true) ? $provider : 'anthropic';
-        $s['model']              = sanitize_text_field(wp_unslash($_POST['model'] ?? $s['model']));
-        $s['gemini_model']       = sanitize_text_field(wp_unslash($_POST['gemini_model'] ?? $s['gemini_model']));
-        $s['openai_model']       = sanitize_text_field(wp_unslash($_POST['openai_model'] ?? $s['openai_model']));
-        $s['grok_model']         = sanitize_text_field(wp_unslash($_POST['grok_model'] ?? $s['grok_model']));
+        // Model fields: dropdown of known ids + free-text override (override wins when filled).
+        foreach (array('model', 'gemini_model', 'openai_model', 'grok_model') as $model_field) {
+            $custom = sanitize_text_field(wp_unslash($_POST[$model_field . '_custom'] ?? ''));
+            $picked = sanitize_text_field(wp_unslash($_POST[$model_field] ?? $s[$model_field]));
+            $s[$model_field] = $custom !== '' ? $custom : ($picked !== '' ? $picked : $s[$model_field]);
+        }
         $s['custom_model']       = sanitize_text_field(wp_unslash($_POST['custom_model'] ?? $s['custom_model']));
         $s['custom_base_url']    = esc_url_raw(trim((string) wp_unslash($_POST['custom_base_url'] ?? $s['custom_base_url'])));
         $s['max_tokens']         = max(1000, (int) ($_POST['max_tokens'] ?? $s['max_tokens']));
@@ -915,6 +1244,30 @@ class MFCE_Engine {
         exit;
     }
 
+    /** Edit a pending topic in place: title, notes, persona/provider/model overrides. */
+    public static function handle_update_topic() {
+        if (!current_user_can('manage_options')) { wp_die('Nope.'); }
+        check_admin_referer('mfce_update_topic');
+        $id = sanitize_text_field(wp_unslash($_POST['topic_id'] ?? ''));
+        $personas = self::personas();
+        $topics = self::topics();
+        foreach ($topics as &$t) {
+            if ($t['id'] !== $id) { continue; }
+            $title = sanitize_text_field(wp_unslash($_POST['title'] ?? ''));
+            if ($title !== '') { $t['title'] = $title; }
+            $t['notes'] = sanitize_text_field(wp_unslash($_POST['notes'] ?? ''));
+            $persona = sanitize_text_field(wp_unslash($_POST['persona'] ?? ''));
+            $t['persona'] = isset($personas[$persona]) ? $persona : '';
+            $provider = sanitize_text_field(wp_unslash($_POST['provider'] ?? ''));
+            $t['provider'] = in_array($provider, array('anthropic', 'gemini', 'openai', 'grok', 'custom'), true) ? $provider : '';
+            $t['model'] = sanitize_text_field(wp_unslash($_POST['model'] ?? ''));
+        }
+        unset($t);
+        update_option(self::OPT_TOPICS, $topics, false);
+        wp_safe_redirect(admin_url('admin.php?page=mfce&notice=topicsaved'));
+        exit;
+    }
+
     public static function handle_delete_topic() {
         if (!current_user_can('manage_options')) { wp_die('Nope.'); }
         check_admin_referer('mfce_delete_topic');
@@ -924,6 +1277,126 @@ class MFCE_Engine {
         }));
         update_option(self::OPT_TOPICS, $topics, false);
         wp_safe_redirect(admin_url('admin.php?page=mfce&notice=deleted'));
+        exit;
+    }
+
+    /**
+     * Ask the AI to plan/replace the topic queue. The proposal is stored and
+     * shown in a review popup - nothing is overwritten until Apply is clicked.
+     */
+    public static function handle_plan_topics() {
+        if (!current_user_can('manage_options')) { wp_die('Nope.'); }
+        check_admin_referer('mfce_plan_topics');
+        if (function_exists('set_time_limit')) { @set_time_limit(300); }
+
+        $s = self::settings();
+        if (!self::provider_ready($s)) {
+            wp_safe_redirect(admin_url('admin.php?page=mfce&notice=planfail'));
+            exit;
+        }
+        $instructions = sanitize_textarea_field(wp_unslash($_POST['instructions'] ?? ''));
+
+        $pending = array();
+        foreach (self::topics() as $t) {
+            if ($t['status'] === 'pending') {
+                $pending[] = $t['title'] . ($t['notes'] !== '' ? ' | ' . $t['notes'] : '');
+            }
+        }
+        $recent = array();
+        foreach (get_posts(array('post_status' => array('publish', 'draft', 'pending'), 'numberposts' => 12, 'orderby' => 'date', 'order' => 'DESC')) as $p) {
+            $recent[] = $p->post_title;
+        }
+        $personas = self::personas();
+        $voices = array();
+        foreach ($personas as $key => $p) { $voices[] = $key . ' = ' . $p['name'] . ': ' . $p['voice']; }
+        $now = new DateTime('now', wp_timezone());
+
+        $system = 'You are the content planner for Manifested Fit (manifestedfit.com/blog), a wellness brand blending manifestation, gentle fitness, and mindset for everyday people. '
+            . 'Plan the upcoming topic queue: one blog post is published per day, drafted by that day\'s persona. '
+            . "Persona schedule: Mon frankie, Tue dana, Wed nadia, Thu dana, Fri rowan, weekends random. Voices:\n- " . implode("\n- ", $voices) . "\n"
+            . 'Rules: practical and doable beats abstract; no medical claims or income promises; categories covered: ' . implode(', ', self::categories()) . '. '
+            . 'Return 10-20 topics in the order they should be written (topic 1 = the next post). For each: a compelling title, short editor notes (angle + 2-3 must-cover points; if the topic is part of a series, say "Part N of X: <series name>" in the notes), and persona - use "" to accept the day-of-week default, or a persona key only when the topic clearly belongs to that voice.';
+
+        $user = 'Today is ' . $now->format('l, F j, Y') . " (Canada).\n\nCurrent pending queue (you are replacing this - keep whatever is still good, drop or improve the weak ones, note that stray lines may be leftover notes accidentally added as topics):\n"
+            . ($pending ? '- ' . implode("\n- ", $pending) : '(empty)')
+            . "\n\nRecent post titles (avoid repeats):\n" . ($recent ? '- ' . implode("\n- ", $recent) : '(none yet)')
+            . ($instructions !== '' ? "\n\nEditor's special instructions (follow these):\n" . $instructions : '');
+
+        $schema = array(
+            'type' => 'object',
+            'properties' => array(
+                'topics' => array(
+                    'type'  => 'array',
+                    'items' => array(
+                        'type' => 'object',
+                        'properties' => array(
+                            'title'   => array('type' => 'string'),
+                            'notes'   => array('type' => 'string'),
+                            'persona' => array('type' => 'string', 'enum' => array_merge(array(''), array_keys($personas))),
+                        ),
+                        'required' => array('title', 'notes', 'persona'),
+                        'additionalProperties' => false,
+                    ),
+                ),
+            ),
+            'required' => array('topics'),
+            'additionalProperties' => false,
+        );
+
+        $parsed = self::ai_json($s, $system, $user, $schema);
+        if (is_wp_error($parsed) || empty($parsed['topics']) || !is_array($parsed['topics'])) {
+            self::log('FAIL: AI topic planning failed: ' . (is_wp_error($parsed) ? $parsed->get_error_message() : 'no topics returned'));
+            wp_safe_redirect(admin_url('admin.php?page=mfce&notice=planfail'));
+            exit;
+        }
+
+        $proposal = array();
+        foreach ($parsed['topics'] as $t) {
+            if (empty($t['title'])) { continue; }
+            $persona = isset($t['persona'], $personas[$t['persona']]) ? $t['persona'] : '';
+            $proposal[] = array(
+                'title'   => sanitize_text_field($t['title']),
+                'notes'   => sanitize_text_field($t['notes'] ?? ''),
+                'persona' => $persona,
+            );
+        }
+        update_option('mfce_topic_plan', array('topics' => $proposal, 'instructions' => $instructions, 'created' => current_time('mysql')), false);
+        self::log('OK: AI proposed a topic plan (' . count($proposal) . ' topics) - awaiting review.');
+        wp_safe_redirect(admin_url('admin.php?page=mfce&notice=planned'));
+        exit;
+    }
+
+    /** Apply the reviewed plan: replaces all PENDING topics; used history is kept. */
+    public static function handle_apply_plan() {
+        if (!current_user_can('manage_options')) { wp_die('Nope.'); }
+        check_admin_referer('mfce_apply_plan');
+        $plan = get_option('mfce_topic_plan', array());
+        if (empty($plan['topics'])) {
+            wp_safe_redirect(admin_url('admin.php?page=mfce&notice=planfail'));
+            exit;
+        }
+        $kept = array_values(array_filter(self::topics(), function ($t) { return $t['status'] !== 'pending'; }));
+        foreach ($plan['topics'] as $t) {
+            $kept[] = array(
+                'id'      => uniqid('t'),
+                'title'   => $t['title'],
+                'notes'   => $t['notes'],
+                'persona' => $t['persona'],
+                'status'  => 'pending',
+            );
+        }
+        update_option(self::OPT_TOPICS, $kept, false);
+        delete_option('mfce_topic_plan');
+        self::log('OK: AI topic plan applied (' . count($plan['topics']) . ' pending topics).');
+        wp_safe_redirect(admin_url('admin.php?page=mfce&notice=planapplied'));
+        exit;
+    }
+
+    public static function handle_discard_plan() {
+        if (!current_user_can('manage_options')) { wp_die('Nope.'); }
+        check_admin_referer('mfce_discard_plan');
+        delete_option('mfce_topic_plan');
+        wp_safe_redirect(admin_url('admin.php?page=mfce&notice=plandiscarded'));
         exit;
     }
 
@@ -964,6 +1437,22 @@ class MFCE_Engine {
         exit;
     }
 
+    /** Model picker: dropdown of known ids + free-text override (override wins when filled). */
+    private static function model_select($field, $provider, $current) {
+        $known  = self::known_models();
+        $models = isset($known[$provider]) ? $known[$provider] : array();
+        if ($current !== '' && !in_array($current, $models, true)) { array_unshift($models, $current); }
+        ?>
+        <select name="<?php echo esc_attr($field); ?>">
+            <?php foreach ($models as $m) : ?>
+                <option value="<?php echo esc_attr($m); ?>" <?php selected($current, $m); ?>><?php echo esc_html($m); ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="text" name="<?php echo esc_attr($field); ?>_custom" placeholder="or type a newer model id" style="max-width:220px">
+        <p class="description">Pick from the list; the text box overrides the dropdown when filled (for models newer than this plugin).</p>
+        <?php
+    }
+
     public static function render_admin() {
         if (!current_user_can('manage_options')) { return; }
         $s = self::settings();
@@ -978,7 +1467,12 @@ class MFCE_Engine {
         $notices = array(
             'saved'   => array('success', 'Settings saved.'),
             'topics'  => array('success', 'Topics added to the queue.'),
+            'topicsaved' => array('success', 'Topic updated.'),
             'deleted' => array('success', 'Topic removed.'),
+            'planned' => array('success', 'The AI proposed a new topic plan - review it below and Apply or Discard.'),
+            'planfail' => array('error', 'AI topic planning failed - check the provider key and the activity log.'),
+            'planapplied' => array('success', 'Topic plan applied - the pending queue was replaced.'),
+            'plandiscarded' => array('success', 'Topic plan discarded - your queue is unchanged.'),
             'ran'     => array('success', 'Engine ran - check the log below and your Telegram.'),
             'runfail' => array('error',   'Engine run did not create a draft - see the log below.'),
             'tgok'    => array('success', 'Telegram test message sent.'),
@@ -989,50 +1483,102 @@ class MFCE_Engine {
         $notice = sanitize_text_field(wp_unslash($_GET['notice'] ?? ''));
         ?>
         <div class="wrap">
+            <style>
+                details.mfce-acc { background:#fff; border:1px solid #c3c4c7; border-radius:2px; margin:12px 0; max-width:1100px; box-shadow:0 1px 1px rgba(0,0,0,.04); }
+                details.mfce-acc > summary { cursor:pointer; padding:10px 14px; font-size:14px; font-weight:600; background:#f6f7f7; user-select:none; }
+                details.mfce-acc[open] > summary { border-bottom:1px solid #c3c4c7; }
+                details.mfce-acc > .mfce-inside { padding:6px 14px 14px; }
+                .mfce-topic-input { width:100%; }
+                .mfce-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100000; display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; }
+                .mfce-modal { background:#fff; border-radius:4px; max-width:860px; width:100%; padding:18px 22px; box-shadow:0 8px 30px rgba(0,0,0,.35); }
+                .mfce-modal h2 { margin-top:0; }
+            </style>
             <h1>Manifested Fit Content Engine</h1>
             <?php if (isset($notices[$notice])) : ?>
                 <div class="notice notice-<?php echo esc_attr($notices[$notice][0]); ?> is-dismissible"><p><?php echo esc_html($notices[$notice][1]); ?></p></div>
             <?php endif; ?>
 
-            <h2>Status</h2>
-            <table class="widefat striped" style="max-width:720px">
-                <tbody>
-                    <tr><td>Engine</td><td><?php echo $s['enabled'] ? '<strong style="color:green">Enabled</strong>' : '<strong style="color:#b00">Disabled</strong> (cron runs are skipped; Run Now still works)'; ?></td></tr>
-                    <tr><td>Today's persona</td><td><?php echo esc_html($personas[$pick['persona']]['name'] . ' (' . $pick['mode'] . ($pick['occasion'] ? ': ' . $pick['occasion'] : '') . ')'); ?></td></tr>
-                    <tr><td>Pending topics</td><td><?php echo (int) count($pending); ?></td></tr>
-                    <tr><td>Last run</td><td><?php echo esc_html($s['last_run_date'] ?: 'never'); ?></td></tr>
-                    <tr><td>Provider / model</td><td><?php echo esc_html(self::provider_label($s)); ?></td></tr>
-                    <tr><td>API key (selected provider)</td><td><?php echo self::provider_ready($s) ? 'set (hidden)' : '<strong style="color:#b00">missing</strong>'; ?></td></tr>
-                    <tr><td>Telegram</td><td><?php echo ($s['telegram_bot_token'] && $s['telegram_chat_id']) ? 'configured' : '<strong style="color:#b00">not configured</strong>'; ?></td></tr>
-                </tbody>
-            </table>
+            <?php $plan = get_option('mfce_topic_plan', array()); ?>
+            <?php if (!empty($plan['topics'])) : ?>
+            <div class="mfce-modal-backdrop">
+                <div class="mfce-modal">
+                    <h2>AI topic plan - review before applying</h2>
+                    <p class="description">Proposed <?php echo (int) count($plan['topics']); ?> topics (<?php echo esc_html($plan['created'] ?? ''); ?>).
+                        <?php if (!empty($plan['instructions'])) : ?>Your instructions: "<?php echo esc_html($plan['instructions']); ?>"<?php endif; ?>
+                        Applying <strong>replaces all pending topics</strong>; used-topic history is kept. You can still edit topics after applying.</p>
+                    <table class="widefat striped">
+                        <thead><tr><th style="width:34%">Topic</th><th>Notes</th><th style="width:110px">Persona</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($plan['topics'] as $pt) : ?>
+                            <tr>
+                                <td><?php echo esc_html($pt['title']); ?></td>
+                                <td><?php echo esc_html($pt['notes']); ?></td>
+                                <td><?php echo esc_html($pt['persona'] !== '' && isset($personas[$pt['persona']]) ? $personas[$pt['persona']]['name'] : 'Schedule'); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <p style="margin-top:14px">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                            <?php wp_nonce_field('mfce_apply_plan'); ?>
+                            <input type="hidden" name="action" value="mfce_apply_plan">
+                            <button class="button button-primary">Apply plan (replace pending topics)</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;margin-left:8px">
+                            <?php wp_nonce_field('mfce_discard_plan'); ?>
+                            <input type="hidden" name="action" value="mfce_discard_plan">
+                            <button class="button">Discard</button>
+                        </form>
+                    </p>
+                </div>
+            </div>
+            <?php endif; ?>
 
-            <p style="margin-top:12px">
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
-                    <?php wp_nonce_field('mfce_run_now'); ?>
-                    <input type="hidden" name="action" value="mfce_run_now">
-                    <button class="button button-primary" onclick="this.disabled=true;this.form.submit();this.textContent='Writing... (takes a minute or two)'">Run Now (writes one draft)</button>
-                </form>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;margin-left:8px">
-                    <?php wp_nonce_field('mfce_test_telegram'); ?>
-                    <input type="hidden" name="action" value="mfce_test_telegram">
-                    <button class="button">Send Telegram test</button>
-                </form>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;margin-left:8px">
-                    <?php wp_nonce_field('mfce_register_webhook'); ?>
-                    <input type="hidden" name="action" value="mfce_register_webhook">
-                    <button class="button">Enable two-way Telegram (register webhook)</button>
-                </form>
-            </p>
-            <p class="description" style="max-width:720px">Two-way mode: draft notifications get Publish / Keep / Trash buttons (tapping Publish is your approval - nothing publishes without it), replying to a notification sends revision instructions to the AI, and any other message to the bot is answered by the configured model.</p>
+            <details class="mfce-acc" open>
+                <summary>Status &amp; actions</summary>
+                <div class="mfce-inside">
+                    <table class="widefat striped" style="max-width:720px">
+                        <tbody>
+                            <tr><td>Engine</td><td><?php echo $s['enabled'] ? '<strong style="color:green">Enabled</strong>' : '<strong style="color:#b00">Disabled</strong> (cron runs are skipped; Run Now still works)'; ?></td></tr>
+                            <tr><td>Today's persona</td><td><?php echo esc_html($personas[$pick['persona']]['name'] . ' (' . $pick['mode'] . ($pick['occasion'] ? ': ' . $pick['occasion'] : '') . ')'); ?></td></tr>
+                            <tr><td>Pending topics</td><td><?php echo (int) count($pending); ?><?php echo (!$pending && !empty($s['auto_topic'])) ? ' (the AI will pick tomorrow\'s topic itself)' : ''; ?></td></tr>
+                            <tr><td>Last run</td><td><?php echo esc_html($s['last_run_date'] ?: 'never'); ?></td></tr>
+                            <tr><td>Default provider / model</td><td><?php echo esc_html(self::provider_label($s)); ?> <span class="description">(individual topics can override this)</span></td></tr>
+                            <tr><td>API key (default provider)</td><td><?php echo self::provider_ready($s) ? 'set (hidden)' : '<strong style="color:#b00">missing</strong>'; ?></td></tr>
+                            <tr><td>Telegram</td><td><?php echo ($s['telegram_bot_token'] && $s['telegram_chat_id']) ? 'configured' : '<strong style="color:#b00">not configured</strong>'; ?></td></tr>
+                        </tbody>
+                    </table>
 
-            <h2>Settings</h2>
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:720px">
+                    <p style="margin-top:12px">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
+                            <?php wp_nonce_field('mfce_run_now'); ?>
+                            <input type="hidden" name="action" value="mfce_run_now">
+                            <button class="button button-primary" onclick="this.disabled=true;this.form.submit();this.textContent='Writing... (takes a minute or two)'">Run Now (writes one draft)</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;margin-left:8px">
+                            <?php wp_nonce_field('mfce_test_telegram'); ?>
+                            <input type="hidden" name="action" value="mfce_test_telegram">
+                            <button class="button">Send Telegram test</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;margin-left:8px">
+                            <?php wp_nonce_field('mfce_register_webhook'); ?>
+                            <input type="hidden" name="action" value="mfce_register_webhook">
+                            <button class="button">Enable two-way Telegram (register webhook)</button>
+                        </form>
+                    </p>
+                    <p class="description" style="max-width:720px">Two-way mode: draft notifications get Publish / Keep / Trash buttons (tapping Publish is your approval - nothing publishes without it), replying to a notification sends revision instructions to the AI, and any other message to the bot is answered by the configured model.</p>
+                </div>
+            </details>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:1100px">
                 <?php wp_nonce_field('mfce_save_settings'); ?>
                 <input type="hidden" name="action" value="mfce_save_settings">
+                <details class="mfce-acc">
+                <summary>Engine &amp; AI provider settings</summary>
+                <div class="mfce-inside">
                 <table class="form-table">
                     <tr><th>Enabled (daily cron)</th><td><label><input type="checkbox" name="enabled" <?php checked($s['enabled'], 1); ?>> Allow the daily cron to create a draft</label></td></tr>
-                    <tr><th>AI provider</th><td>
+                    <tr><th>AI topic fallback</th><td><label><input type="checkbox" name="auto_topic" <?php checked($s['auto_topic'], 1); ?>> If the topic queue is empty, let the AI pick today's topic (day of week, holidays/weekends, persona, and recent posts considered; the pick is added to the queue and flagged in the Telegram notice)</label></td></tr>
+                    <tr><th>Default AI provider</th><td>
                         <select name="provider">
                             <option value="anthropic" <?php selected($s['provider'], 'anthropic'); ?>>Anthropic (Claude)</option>
                             <option value="gemini" <?php selected($s['provider'], 'gemini'); ?>>Google Gemini</option>
@@ -1040,62 +1586,139 @@ class MFCE_Engine {
                             <option value="grok" <?php selected($s['provider'], 'grok'); ?>>Grok (xAI)</option>
                             <option value="custom" <?php selected($s['provider'], 'custom'); ?>>Custom / local (OpenAI-compatible, e.g. Ollama)</option>
                         </select>
-                        <p class="description">Which AI writes posts, revises drafts, and answers Telegram chat. Only the selected provider's key is required.</p>
+                        <p class="description">Which AI writes posts, revises drafts, and answers Telegram chat by default. Only the selected provider's key is required; keys for other providers may still be saved, and individual topics in the queue can override the provider/model per post.</p>
                     </td></tr>
                     <tr><th>Anthropic API key</th><td><input type="password" name="anthropic_api_key" class="regular-text" placeholder="<?php echo $s['anthropic_api_key'] ? 'saved - leave blank to keep' : 'sk-ant-...'; ?>" autocomplete="off"></td></tr>
-                    <tr><th>Anthropic model</th><td><input type="text" name="model" class="regular-text" value="<?php echo esc_attr($s['model']); ?>"> <p class="description">Default: claude-opus-4-8</p></td></tr>
+                    <tr><th>Anthropic model</th><td><?php self::model_select('model', 'anthropic', $s['model']); ?></td></tr>
                     <tr><th>Gemini API key</th><td><input type="password" name="gemini_api_key" class="regular-text" placeholder="<?php echo $s['gemini_api_key'] ? 'saved - leave blank to keep' : 'AIza...'; ?>" autocomplete="off"></td></tr>
-                    <tr><th>Gemini model</th><td><input type="text" name="gemini_model" class="regular-text" value="<?php echo esc_attr($s['gemini_model']); ?>"> <p class="description">Default: gemini-2.5-flash</p></td></tr>
+                    <tr><th>Gemini model</th><td><?php self::model_select('gemini_model', 'gemini', $s['gemini_model']); ?></td></tr>
                     <tr><th>OpenAI API key</th><td><input type="password" name="openai_api_key" class="regular-text" placeholder="<?php echo $s['openai_api_key'] ? 'saved - leave blank to keep' : 'sk-...'; ?>" autocomplete="off"></td></tr>
-                    <tr><th>OpenAI model</th><td><input type="text" name="openai_model" class="regular-text" value="<?php echo esc_attr($s['openai_model']); ?>"> <p class="description">Default: gpt-5.1</p></td></tr>
+                    <tr><th>OpenAI model</th><td><?php self::model_select('openai_model', 'openai', $s['openai_model']); ?></td></tr>
                     <tr><th>Grok API key</th><td><input type="password" name="grok_api_key" class="regular-text" placeholder="<?php echo $s['grok_api_key'] ? 'saved - leave blank to keep' : 'xai-...'; ?>" autocomplete="off"></td></tr>
-                    <tr><th>Grok model</th><td><input type="text" name="grok_model" class="regular-text" value="<?php echo esc_attr($s['grok_model']); ?>"> <p class="description">Default: grok-4</p></td></tr>
+                    <tr><th>Grok model</th><td><?php self::model_select('grok_model', 'grok', $s['grok_model']); ?></td></tr>
                     <tr><th>Custom base URL</th><td><input type="text" name="custom_base_url" class="regular-text" value="<?php echo esc_attr($s['custom_base_url']); ?>" placeholder="https://my-vm.example.com/v1">
                         <p class="description">Any OpenAI-compatible endpoint (Ollama: <code>http://host:11434/v1</code>). Must be reachable FROM the Bluehost server - a home PC needs a tunnel (Tailscale Funnel / cloudflared) or the VM a public IP. Use HTTPS or a private tunnel; never a bare public HTTP endpoint.</p></td></tr>
                     <tr><th>Custom API key (optional)</th><td><input type="password" name="custom_api_key" class="regular-text" placeholder="<?php echo $s['custom_api_key'] ? 'saved - leave blank to keep' : 'leave empty for local models'; ?>" autocomplete="off"></td></tr>
                     <tr><th>Custom model</th><td><input type="text" name="custom_model" class="regular-text" value="<?php echo esc_attr($s['custom_model']); ?>" placeholder="llama3.1:8b"></td></tr>
                     <tr><th>Max tokens</th><td><input type="number" name="max_tokens" value="<?php echo esc_attr($s['max_tokens']); ?>"></td></tr>
-                    <tr><th>Telegram bot token</th><td><input type="password" name="telegram_bot_token" class="regular-text" placeholder="<?php echo $s['telegram_bot_token'] ? 'saved - leave blank to keep' : '123456:ABC...'; ?>" autocomplete="off"></td></tr>
-                    <tr><th>Telegram chat id</th><td><input type="text" name="telegram_chat_id" class="regular-text" value="<?php echo esc_attr($s['telegram_chat_id']); ?>"></td></tr>
                 </table>
-                <p><button class="button button-primary">Save settings</button></p>
+                </div>
+                </details>
+
+                <details class="mfce-acc">
+                <summary>Telegram settings</summary>
+                <div class="mfce-inside">
+                <table class="form-table">
+                    <tr><th>Telegram bot token</th><td><input type="password" name="telegram_bot_token" class="regular-text" placeholder="<?php echo $s['telegram_bot_token'] ? 'saved - leave blank to keep' : '123456:ABC...'; ?>" autocomplete="off"></td></tr>
+                    <tr><th>Telegram chat id</th><td><input type="text" name="telegram_chat_id" class="regular-text" value="<?php echo esc_attr($s['telegram_chat_id']); ?>">
+                        <p class="description">Your personal chat id with the bot (message @userinfobot to find it) - never the bot's own id.</p></td></tr>
+                </table>
+                </div>
+                </details>
+                <p><button class="button button-primary">Save settings</button> <span class="description">Saves both sections above.</span></p>
             </form>
 
-            <h2>Bluehost cron</h2>
+            <details class="mfce-acc">
+            <summary>Bluehost cron &amp; video pipeline endpoints</summary>
+            <div class="mfce-inside">
+            <h3>Bluehost cron</h3>
             <p style="max-width:720px">Create a daily cron job in cPanel (e.g. 6:00 AM) with this command:</p>
             <code style="display:block;max-width:720px;padding:8px;background:#fff;word-break:break-all">curl -s "<?php echo esc_html($cron_url); ?>" &gt; /dev/null 2&gt;&amp;1</code>
             <p class="description">The engine runs at most once per calendar day, so an accidental second cron hit is harmless.</p>
 
-            <h2>Topic queue (<?php echo (int) count($pending); ?> pending)</h2>
+            <h3>Video pipeline endpoints</h3>
+            <p style="max-width:720px">For the external video workflow (Make.com, a local script, etc.). All share the cron secret. Statuses flow: <code>needed</code> → <code>review</code> (after video-ready) → <code>approved</code>/<code>rejected</code> (Telegram buttons) → <code>embedded</code> (after video-embed).</p>
+            <table class="widefat striped" style="max-width:900px">
+                <tbody>
+                    <tr><td>Poll queue + briefs + approval status</td><td><code style="word-break:break-all">GET <?php echo esc_html(rest_url('mfce/v1/video-queue') . '?secret=' . rawurlencode($s['cron_secret'])); ?></code></td></tr>
+                    <tr><td>Announce a rendered video for approval</td><td><code style="word-break:break-all">POST <?php echo esc_html(rest_url('mfce/v1/video-ready') . '?secret=' . rawurlencode($s['cron_secret'])); ?>&amp;post_id=ID&amp;preview_url=URL</code></td></tr>
+                    <tr><td>Embed the approved YouTube video</td><td><code style="word-break:break-all">POST <?php echo esc_html(rest_url('mfce/v1/video-embed') . '?secret=' . rawurlencode($s['cron_secret'])); ?>&amp;post_id=ID&amp;youtube_url=URL</code></td></tr>
+                </tbody>
+            </table>
+            </div>
+            </details>
+
+            <details class="mfce-acc" <?php echo $pending ? '' : 'open'; ?>>
+            <summary>Topic queue (<?php echo (int) count($pending); ?> pending)</summary>
+            <div class="mfce-inside">
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:720px">
                 <?php wp_nonce_field('mfce_add_topics'); ?>
                 <input type="hidden" name="action" value="mfce_add_topics">
                 <textarea name="topics" rows="4" class="large-text" placeholder="One topic per line. Optional editor notes after a pipe:&#10;The 5-minute morning reset | angle: for people who hate mornings"></textarea>
                 <p><button class="button">Add topics</button></p>
             </form>
-            <table class="widefat striped" style="max-width:900px">
-                <thead><tr><th>Topic</th><th>Notes</th><th>Status</th><th></th></tr></thead>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="max-width:720px;margin-top:8px;padding:10px 12px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:3px">
+                <?php wp_nonce_field('mfce_plan_topics'); ?>
+                <input type="hidden" name="action" value="mfce_plan_topics">
+                <strong>Or let the AI plan the queue.</strong>
+                <p class="description" style="margin:4px 0 6px">The AI reads your current queue, recent posts, the persona schedule, season and holidays, then proposes a fresh 10-20 topic queue for your review (nothing is replaced until you approve the popup). Optional extra instructions:</p>
+                <textarea name="instructions" rows="2" class="large-text" placeholder="e.g. Also make a couple of series based on the season and have them last a week each. Include at least two recipes."></textarea>
+                <p><button class="button" onclick="this.disabled=true;this.form.submit();this.textContent='Planning... (takes a minute)'">Ask AI to plan the queue</button></p>
+            </form>
+            <?php $providers = array('anthropic' => 'Anthropic', 'gemini' => 'Gemini', 'openai' => 'OpenAI', 'grok' => 'Grok', 'custom' => 'Custom/local'); ?>
+            <p class="description">Pending topics are editable in place. Persona and provider/model default to the day's schedule and the settings above; set them only when a specific topic should override.</p>
+            <table class="widefat striped">
+                <thead><tr><th style="width:26%">Topic</th><th style="width:26%">Notes</th><th>Persona</th><th>Provider / model</th><th>Status</th><th style="width:130px"></th></tr></thead>
                 <tbody>
                 <?php if (!$topics) : ?>
-                    <tr><td colspan="4">Queue is empty.</td></tr>
+                    <tr><td colspan="6">Queue is empty<?php echo !empty($s['auto_topic']) ? ' - the AI will pick each day\'s topic until you add some' : ''; ?>.</td></tr>
                 <?php endif; ?>
-                <?php foreach ($topics as $t) : ?>
+                <?php foreach ($topics as $t) : $fid = 'tf-' . $t['id']; ?>
+                    <?php if ($t['status'] === 'pending') : ?>
+                    <tr>
+                        <td><input type="text" name="title" form="<?php echo esc_attr($fid); ?>" value="<?php echo esc_attr($t['title']); ?>" class="mfce-topic-input"></td>
+                        <td><input type="text" name="notes" form="<?php echo esc_attr($fid); ?>" value="<?php echo esc_attr($t['notes']); ?>" class="mfce-topic-input"></td>
+                        <td>
+                            <select name="persona" form="<?php echo esc_attr($fid); ?>">
+                                <option value="">Schedule default</option>
+                                <?php foreach ($personas as $pkey => $p) : ?>
+                                    <option value="<?php echo esc_attr($pkey); ?>" <?php selected($t['persona'] ?? '', $pkey); ?>><?php echo esc_html($p['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td>
+                            <select name="provider" form="<?php echo esc_attr($fid); ?>">
+                                <option value="">Default</option>
+                                <?php foreach ($providers as $prov_key => $prov_label) : ?>
+                                    <option value="<?php echo esc_attr($prov_key); ?>" <?php selected($t['provider'] ?? '', $prov_key); ?>><?php echo esc_html($prov_label); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input type="text" name="model" form="<?php echo esc_attr($fid); ?>" value="<?php echo esc_attr($t['model'] ?? ''); ?>" placeholder="model (optional)" style="margin-top:4px;max-width:140px">
+                        </td>
+                        <td>pending<?php echo !empty($t['auto']) ? '<br><em>(AI-picked)</em>' : ''; ?></td>
+                        <td>
+                            <button class="button button-small button-primary" form="<?php echo esc_attr($fid); ?>">Save</button>
+                            <a class="button button-small" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=mfce_delete_topic&topic=' . $t['id']), 'mfce_delete_topic')); ?>">Delete</a>
+                        </td>
+                    </tr>
+                    <?php else : ?>
                     <tr>
                         <td><?php echo esc_html($t['title']); ?></td>
                         <td><?php echo esc_html($t['notes']); ?></td>
-                        <td><?php echo esc_html($t['status'] . (isset($t['post_id']) ? ' (draft #' . $t['post_id'] . ')' : '')); ?></td>
-                        <td>
-                            <?php if ($t['status'] === 'pending') : ?>
-                                <a class="button button-small" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=mfce_delete_topic&topic=' . $t['id']), 'mfce_delete_topic')); ?>">Delete</a>
-                            <?php endif; ?>
-                        </td>
+                        <td><?php echo esc_html(isset($t['persona'], $personas[$t['persona']]) ? $personas[$t['persona']]['name'] : '-'); ?></td>
+                        <td><?php echo esc_html(!empty($t['provider']) ? $t['provider'] . (!empty($t['model']) ? ' / ' . $t['model'] : '') : '-'); ?></td>
+                        <td><?php echo esc_html($t['status'] . (isset($t['post_id']) ? ' (draft #' . $t['post_id'] . ')' : '') . (!empty($t['auto']) ? ', AI-picked' : '')); ?></td>
+                        <td></td>
                     </tr>
+                    <?php endif; ?>
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?php foreach ($topics as $t) : if ($t['status'] !== 'pending') { continue; } ?>
+                <form id="tf-<?php echo esc_attr($t['id']); ?>" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <?php wp_nonce_field('mfce_update_topic'); ?>
+                    <input type="hidden" name="action" value="mfce_update_topic">
+                    <input type="hidden" name="topic_id" value="<?php echo esc_attr($t['id']); ?>">
+                </form>
+            <?php endforeach; ?>
+            </div>
+            </details>
 
-            <h2>Recent activity</h2>
-            <table class="widefat striped" style="max-width:900px">
+            <details class="mfce-acc">
+            <summary>Recent activity</summary>
+            <div class="mfce-inside">
+            <table class="widefat striped">
                 <tbody>
                 <?php if (!$log) : ?>
                     <tr><td>No activity yet.</td></tr>
@@ -1105,6 +1728,8 @@ class MFCE_Engine {
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
+            </details>
         </div>
         <?php
     }
