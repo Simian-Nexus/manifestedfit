@@ -1,0 +1,7 @@
+{
+  "client_secret_file": "client_secret.json",
+  "token_file": "youtube_token.json",
+  "mfce_base_url": "https://manifestedfit.com/wp-json/mfce/v1",
+  "mfce_cron_secret": "PUT-MFCE-SECRET-HERE",
+  "pexels_api_key": "PUT-PEXELS-KEY-HERE"
+}

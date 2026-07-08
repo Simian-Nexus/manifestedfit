@@ -1,5 +1,17 @@
 # Local secrets and deployment config
 07_Deploy/targets/*/config.json
+07_Deploy/targets/video-worker/client_secret.json
+07_Deploy/targets/video-worker/youtube_token.json
+07_Deploy/targets/video-worker/venv/
+07_Deploy/targets/video-worker/music/
+07_Deploy/targets/video-worker/refs/
+07_Deploy/targets/video-worker/samples/
+07_Deploy/targets/video-worker/branding/intro.mp4
+07_Deploy/targets/video-worker/branding/endcard.png
+07_Deploy/targets/video-worker/branding/jingle.mp3
+07_Deploy/targets/video-worker/chatterbox_sample.wav
+07_Deploy/targets/video-worker/dashboard_run.log
+07_Deploy/targets/video-worker/__pycache__/
 01_Admin/WebHelper.txt
 01_Admin/*credential*
 01_Admin/*password*

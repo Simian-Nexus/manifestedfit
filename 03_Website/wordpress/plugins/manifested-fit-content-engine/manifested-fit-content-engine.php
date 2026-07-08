@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Manifested Fit Content Engine
  * Description: Supervised AI drafting engine. A daily cron (or the Run Now button) picks the day's persona and next queued topic, asks the AI to write the post (with a [VIDEO EMBED] placeholder and a YouTube video brief), saves it as a DRAFT under the persona's byline, and sends a Telegram notification for review. A companion video workflow can fetch briefs and attach approved YouTube videos via REST. Nothing is ever auto-published.
- * Version: 0.4.0
+ * Version: 0.4.2
  * Author: Spinning Monkey Studios
  */
 
@@ -744,25 +744,39 @@ class MFCE_Engine {
         return '';
     }
 
-    /** Gutenberg embed block for a YouTube URL - survives kses and renders responsively. */
+    /** Direct responsive iframe for a YouTube URL. Deliberately NOT an oEmbed /
+     * wp:embed block: oEmbed resolution can fail on shared hosting (leaving a
+     * bare URL in the post, as happened on mobile), while a plain iframe with
+     * inline styles renders in any theme with no oEmbed or theme CSS needed. */
     private static function video_embed_block($url) {
-        $attrs = wp_json_encode(array(
-            'url'              => $url,
-            'type'             => 'video',
-            'providerNameSlug' => 'youtube',
-            'responsive'       => true,
-            'className'        => 'wp-embed-aspect-16-9 wp-has-aspect-ratio',
-        ));
-        return "<!-- wp:embed {$attrs} -->\n"
-            . '<figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio"><div class="wp-block-embed__wrapper">' . "\n"
-            . $url . "\n"
-            . "</div></figure>\n<!-- /wp:embed -->";
+        $id = self::youtube_id($url);
+        return '<figure class="mfce-video" style="margin:2em 0;">'
+            . '<div style="position:relative;padding-top:56.25%;">'
+            . '<iframe src="https://www.youtube.com/embed/' . esc_attr($id) . '" '
+            . 'title="Video" loading="lazy" '
+            . 'style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" '
+            . 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
+            . 'allowfullscreen></iframe></div></figure>';
     }
 
-    /** Swap the [VIDEO EMBED] placeholder for $markup; fall back to after the first paragraph. */
+    /** Swap the [VIDEO EMBED] placeholder for $markup; if a video was embedded
+     * before (either markup generation), replace that; else after first paragraph. */
     private static function insert_video_markup($content, $markup) {
         if (preg_match(self::VIDEO_PLACEHOLDER, $content)) {
             return preg_replace_callback(self::VIDEO_PLACEHOLDER, function () use ($markup) {
+                return $markup;
+            }, $content, 1);
+        }
+        // legacy wp:embed block from plugin <= 0.4.1
+        $legacy = '/<!-- wp:embed\b.*?<!-- \/wp:embed -->/s';
+        if (preg_match($legacy, $content)) {
+            return preg_replace_callback($legacy, function () use ($markup) {
+                return $markup;
+            }, $content, 1);
+        }
+        $figure = '/<figure class="mfce-video".*?<\/figure>/s';
+        if (preg_match($figure, $content)) {
+            return preg_replace_callback($figure, function () use ($markup) {
                 return $markup;
             }, $content, 1);
         }
@@ -984,6 +998,7 @@ class MFCE_Engine {
                     $out[] = array(
                         'post_id'      => $p->ID,
                         'title'        => $p->post_title,
+                        'persona'      => get_the_author_meta('display_name', $p->post_author),
                         'post_status'  => $p->post_status,
                         'permalink'    => get_permalink($p->ID),
                         'video_status' => get_post_meta($p->ID, 'mfce_video_status', true),
