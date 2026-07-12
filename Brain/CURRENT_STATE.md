@@ -1,10 +1,12 @@
 # Current State
 
-Last updated: 2026-07-06
+Last updated: 2026-07-08
 
 ## July 2026 — active workstream: automated blog + content pipeline
 
-The focus has shifted to building an automated, supervised blog/content engine. Full plan in `06_Planning/ACTION_PLAN_2026-07.md`; full handoff in `NEXT_CONTEXT_BRIEF.md`.
+The focus has shifted to building an automated, supervised blog/content engine. Full plan in `06_Planning/ACTION_PLAN_2026-07.md`; full handoff (read this first, most current) in `NEXT_CONTEXT_BRIEF.md`.
+
+**2026-07-08 update**: the video worker is now built and has produced two live, embedded videos (see `NEXT_CONTEXT_BRIEF.md` top section for full detail) — YouTube OAuth live, `video_worker.py` + a localhost control dashboard (`07_Deploy/targets/video-worker/dashboard.py`, run via `run_dashboard.bat`) both working, plugin embed bug fixed (v0.4.2). Open: jingle/persona music (Suno), Chatterbox voice cloning decision, Task Scheduler automation, YouTube API audit request.
 
 Done and working:
 - WordPress blog is live at `manifestedfit.com/blog` (subdirectory; the flat funnel at root is untouched). Theme = Twenty Twenty-Five + our brand child theme `03_Website/wordpress/themes/manifestedfit-blog/`. Rank Math active (SiteSEO/SiteSEO Pro being removed as a conflict). SpeedyCache active.
