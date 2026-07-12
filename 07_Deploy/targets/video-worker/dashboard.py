@@ -64,7 +64,7 @@ def api_state():
                  for f in glob.glob(os.path.join(d, e))])
     refs = [os.path.basename(f) for f in glob.glob(os.path.join(REFS, "*.wav"))]
     branding = {n: os.path.exists(os.path.join(HERE, "branding", n))
-                for n in ("intro.mp4", "endcard.png", "jingle.mp3")}
+                for n in ("intro.mp4", "endcard.mp4", "endcard.png", "jingle.mp3", "ding.mp3")}
     return jsonify({"config": cfg, "music": music, "refs": refs,
                     "branding": branding, "worker_running": worker_running()})
 
@@ -75,7 +75,9 @@ def api_config():
     incoming = request.get_json(force=True)
     for key in ("tts_engine", "tts_voice", "voices", "outros", "watermark",
                 "music_volume", "burn_captions", "upload_srt",
-                "approval_wait_minutes"):
+                "approval_wait_minutes", "endcard_hold_seconds",
+                "visuals_engine", "gemini_api_key", "veo_model",
+                "veo_max_clips_per_video", "visual_qa", "gemini_qa_model"):
         if key in incoming:
             cfg[key] = incoming[key]
     save_config(cfg)
@@ -231,6 +233,16 @@ label{font-size:.85em;display:block;opacity:.8}
   <div><label>Watermark</label><input id="c_wm"></div>
   <div><label>Approval wait (min)</label><input id="c_wait" type="number" style="width:5em"></div>
 </div>
+<div class="row">
+  <div><label>Visuals engine</label><select id="c_vis">
+    <option value="pexels">Pexels stock (free)</option>
+    <option value="hybrid">Hybrid: AI picks Veo or stock per beat</option>
+    <option value="veo">Google Veo only (generative, uses credits)</option></select></div>
+  <div><label>AI frame check (match visuals to narration)</label><input id="c_qa" type="checkbox"></div>
+  <div><label>Gemini API key (Veo)</label><input id="c_gkey" type="password" style="width:16em" placeholder="AIza..."></div>
+  <div><label>Veo model</label><input id="c_vmodel" style="width:15em" placeholder="veo-3.0-fast-generate-001"></div>
+  <div><label>Veo max clips/video</label><input id="c_vmax" type="number" min="1" max="20" style="width:5em"></div>
+</div>
 <div id="assets" style="font-size:.9em;margin-top:.5em"></div>
 <div class="row"><button class="primary" onclick="saveConfig()">💾 Save settings</button><span id="savestate"></span></div>
 </div>
@@ -244,7 +256,10 @@ async function load(){
   c_engine.value=CFG.tts_engine||'edge';c_musvol.value=CFG.music_volume??0.09;
   c_burn.checked=CFG.burn_captions!==false;c_srt.checked=CFG.upload_srt!==false;
   c_wm.value=CFG.watermark||'';c_wait.value=CFG.approval_wait_minutes||45;
-  let a=`Branding: intro ${st.branding['intro.mp4']?'✅':'❌'} · endcard ${st.branding['endcard.png']?'✅':'❌'} · jingle ${st.branding['jingle.mp3']?'✅':'❌ (drop branding\\\\jingle.mp3 then rebuild)'}<br>Music tracks: `;
+  c_vis.value=CFG.visuals_engine||'pexels';c_gkey.value=CFG.gemini_api_key||'';
+  c_vmodel.value=CFG.veo_model||'';c_vmax.value=CFG.veo_max_clips_per_video||8;
+  c_qa.checked=CFG.visual_qa!==0&&CFG.visual_qa!==false;
+  let a=`Branding: intro ${st.branding['intro.mp4']?'✅':'❌'} · endcard ${st.branding['endcard.mp4']?'✅ (animated)':(st.branding['endcard.png']?'⚠️ static only (rebuild for bell animation)':'❌')} · jingle ${st.branding['jingle.mp3']?'✅':'❌ (drop branding\\\\jingle.mp3 then rebuild)'}<br>Music tracks: `;
   a+=Object.entries(st.music).map(([k,v])=>`${k}: ${v||'❌ 0'}`).join(' · ')||'none';
   assets.innerHTML=a;
   s_ref.innerHTML='<option value="">built-in</option>'+st.refs.map(r=>`<option>${r}</option>`).join('');
@@ -285,7 +300,9 @@ async function saveConfig(){
       if(k==='exaggeration')voices[p][k]=parseFloat(el.value);else if(v)voices[p][k]=v;else delete voices[p][k]}});
   await j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     tts_engine:c_engine.value,music_volume:parseFloat(c_musvol.value),burn_captions:c_burn.checked,
-    upload_srt:c_srt.checked,watermark:c_wm.value,approval_wait_minutes:parseInt(c_wait.value),voices,outros})});
+    upload_srt:c_srt.checked,watermark:c_wm.value,approval_wait_minutes:parseInt(c_wait.value),
+    visuals_engine:c_vis.value,gemini_api_key:c_gkey.value,veo_model:c_vmodel.value,
+    veo_max_clips_per_video:parseInt(c_vmax.value)||8,visual_qa:c_qa.checked?1:0,voices,outros})});
   savestate.textContent='saved ✅';setTimeout(()=>savestate.textContent='',2000);load();
 }
 load();
