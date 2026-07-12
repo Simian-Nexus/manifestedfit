@@ -42,7 +42,8 @@ from googleapiclient.http import MediaFileUpload
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BRAND = os.path.join(HERE, "branding")
-CLIP_SECONDS = 6          # how much of each b-roll clip to use
+MIN_BEAT_SECONDS = 4.5    # narration beats shorter than this merge into the next
+ENDCARD_HOLD = 5.0        # extra seconds the end card stays up after the outro
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
 
 # Bluehost mod_security rejects the default python-requests agent with a 406
@@ -108,13 +109,42 @@ def sentences(text):
 # ---------------------------------------------------------------- tts
 
 def tts_edge(script, vcfg, workdir, stem):
+    """Synthesize with edge-tts, capturing boundary events so captions and
+    b-roll cuts use the REAL spoken timing instead of estimates. Returns
+    (mp3_path, timing) where timing is {"sentences": [(text, start_s, end_s)],
+    "words": [(start_s, dur_s)]} (either may be empty) or None."""
     out = os.path.join(workdir, f"{stem}.mp3")
-    txt = os.path.join(workdir, f"{stem}.txt")
-    with open(txt, "w", encoding="utf-8") as f:
-        f.write(script)
-    run([sys.executable, "-m", "edge_tts", "--voice", vcfg["edge"],
-         "--file", txt, "--write-media", out])
-    return out
+    try:
+        import asyncio
+        import edge_tts
+
+        sents, words = [], []
+
+        async def _gen():
+            com = edge_tts.Communicate(script, vcfg["edge"])
+            with open(out, "wb") as f:
+                async for ch in com.stream():
+                    if ch["type"] == "audio":
+                        f.write(ch["data"])
+                    elif ch["type"] == "SentenceBoundary":
+                        # offsets are in 100-nanosecond ticks
+                        sents.append(((ch.get("text") or "").strip(),
+                                      ch["offset"] / 1e7,
+                                      (ch["offset"] + ch["duration"]) / 1e7))
+                    elif ch["type"] == "WordBoundary":
+                        words.append((ch["offset"] / 1e7, ch["duration"] / 1e7))
+
+        asyncio.run(_gen())
+        timing = {"sentences": sents, "words": words} if (sents or words) else None
+        return out, timing
+    except Exception as e:
+        print(f"  edge-tts streaming failed ({e}); falling back to the CLI")
+        txt = os.path.join(workdir, f"{stem}.txt")
+        with open(txt, "w", encoding="utf-8") as f:
+            f.write(script)
+        run([sys.executable, "-m", "edge_tts", "--voice", vcfg["edge"],
+             "--file", txt, "--write-media", out])
+        return out, None
 
 
 def tts_chatterbox(script, vcfg, workdir, stem):
@@ -150,11 +180,12 @@ def tts_chatterbox(script, vcfg, workdir, stem):
 
 
 def tts(script, cfg, persona, workdir, stem="voice"):
+    """Returns (audio_path, word_timings_or_None)."""
     vcfg = voice_config(cfg, persona)
     engine = cfg.get("tts_engine", "edge")
     if engine == "chatterbox":
         try:
-            return tts_chatterbox(script, vcfg, workdir, stem)
+            return tts_chatterbox(script, vcfg, workdir, stem), None
         except Exception as e:
             print(f"  chatterbox failed ({e}); falling back to edge-tts")
     return tts_edge(script, vcfg, workdir, stem)
@@ -174,32 +205,350 @@ def pexels_queries(brief, title):
     return queries[:8] or ["morning workout", "healthy lifestyle"]
 
 
-def fetch_clips(cfg, queries, workdir, need_seconds):
-    """Download landscape HD clips until we can cover the voiceover."""
-    clips, have = [], 0.0
+def sentence_times(script, total_dur, timing=None):
+    """[(sentence, start_s, end_s), ...] for one voice track.
+    Preferred source: edge-tts SentenceBoundary events - the engine's own
+    sentence segmentation with exact spoken times. Next best: WordBoundary
+    events mapped onto our sentence split. Fallback (chatterbox/CLI): the
+    old word-share estimate. Sentence ends are stretched to the next
+    sentence's start so captions hold through pauses."""
+    if timing and timing.get("sentences"):
+        sb = timing["sentences"]
+        out, prev = [], 0.0
+        for k, (text, st, en) in enumerate(sb):
+            st = max(st, prev)
+            nxt = sb[k + 1][1] if k + 1 < len(sb) else total_dur
+            end = min(max(en, st + 0.2, nxt), total_dur)
+            out.append((text, st, end))
+            prev = end
+        text, st, _ = out[-1]
+        out[-1] = (text, st, total_dur)
+        return out
+
+    sents = sentences(script)
+    counts = [len(s.split()) for s in sents]
+    total_words = sum(counts) or 1
+    times = []
+    words = timing.get("words") if timing else None
+    if words and len(words) >= len(sents):
+        n, cum, prev = len(words), 0, 0.0
+        for s, c in zip(sents, counts):
+            cum += c
+            idx = min(n - 1, max(0, round(n * cum / total_words) - 1))
+            end = max(words[idx][0] + words[idx][1], prev + 0.3)
+            times.append((s, prev, min(end, total_dur)))
+            prev = times[-1][2]
+        s, st, _ = times[-1]
+        times[-1] = (s, st, total_dur)  # last sentence runs to the audio end
+    else:
+        t = 0.0
+        for s, c in zip(sents, counts):
+            d = total_dur * c / total_words
+            times.append((s, t, t + d))
+            t += d
+    return times
+
+
+def script_beats(script, main_dur, timing=None):
+    """Split the narration into beats and time each one so the b-roll tracks
+    what is being said, using real spoken timings when available (the
+    captions are built from the same sentence times, so visuals and captions
+    change together). Returns [(beat_text, search_query, duration_seconds), ...]."""
+    beats, cur, start = [], [], 0.0
+    for s, _b, e in sentence_times(script, main_dur, timing):
+        cur.append(s)
+        if e - start >= MIN_BEAT_SECONDS:
+            beats.append((" ".join(cur), e - start))
+            cur, start = [], e
+    if cur:
+        rem = main_dur - start
+        if beats and rem < MIN_BEAT_SECONDS / 2:
+            text, dur = beats[-1]
+            beats[-1] = (text + " " + " ".join(cur), dur + rem)
+        else:
+            beats.append((" ".join(cur), rem))
+    out = []
+    for text, dur in beats:
+        keywords = [w.lower() for w in re.findall(r"[A-Za-z]{3,}", text)
+                    if w.lower() not in STOPWORDS]
+        query = " ".join(keywords[:3]) if len(keywords) >= 2 else ""
+        out.append((text, query, dur))
+    return out
+
+
+def fetch_beat_clips(cfg, beats, fallback_queries, workdir):
+    """One landscape HD clip per narration beat (searched from that beat's own
+    words). With a Gemini key and visual_qa on, an AI vision check scores
+    each candidate's preview frame against the narration line and takes the
+    first good fit. Falls back to visual_direction queries, then to reusing
+    an earlier clip, so the list always matches the beats one-to-one."""
     headers = {"Authorization": cfg["pexels_api_key"]}
-    for q in queries * 3:  # cycle queries if we run short
-        if have >= need_seconds + 1:
-            break
+    qa = bool(cfg.get("gemini_api_key")) and bool(cfg.get("visual_qa", 1))
+    clips, used_ids = [], set()
+
+    def candidates(query):
         r = requests.get("https://api.pexels.com/videos/search",
-                         params={"query": q, "per_page": 3, "orientation": "landscape"},
+                         params={"query": query, "per_page": 6, "orientation": "landscape"},
                          headers=headers, timeout=60)
         r.raise_for_status()
+        out = []
         for v in r.json().get("videos", []):
-            files = [f for f in v["video_files"] if f["width"] >= 1280]
-            if not files:
+            if v["id"] in used_ids:
                 continue
-            best = min(files, key=lambda f: abs(f["width"] - WIDTH))
-            raw = os.path.join(workdir, f"raw_{len(clips)}.mp4")
-            with requests.get(best["link"], stream=True, timeout=120) as dl:
-                dl.raise_for_status()
-                with open(raw, "wb") as f:
-                    shutil.copyfileobj(dl.raw, f)
-            clips.append(raw)
-            have += min(v.get("duration", CLIP_SECONDS), CLIP_SECONDS)
-            break  # one video per query keeps the b-roll varied
-    if not clips:
-        raise RuntimeError("Pexels returned no usable clips.")
+            files = [f for f in v["video_files"] if f["width"] >= 1280]
+            if files:
+                out.append({"id": v["id"], "dur": v.get("duration", 0),
+                            "link": min(files, key=lambda f: abs(f["width"] - WIDTH))["link"],
+                            "image": v.get("image")})
+        return out
+
+    def download(cand, name):
+        raw = os.path.join(workdir, name)
+        with requests.get(cand["link"], stream=True, timeout=120) as dl:
+            dl.raise_for_status()
+            with open(raw, "wb") as f:
+                shutil.copyfileobj(dl.raw, f)
+        used_ids.add(cand["id"])
+        return raw
+
+    for i, (text, query, dur) in enumerate(beats):
+        tries = ([query] if query else []) + [fallback_queries[i % len(fallback_queries)]]
+        chosen, best, best_score = None, None, -1.0
+        for q in tries:
+            try:
+                cands = candidates(q)
+            except requests.RequestException:
+                continue
+            cands = ([c for c in cands if c["dur"] >= dur] or cands)[:4]
+            if not cands:
+                continue
+            if not (qa and text):
+                chosen = cands[0]
+                break
+            for c in cands:
+                try:
+                    img = requests.get(c["image"], timeout=30, headers=UA).content
+                    score, fit = frame_matches(cfg, img, text)
+                except Exception:
+                    score, fit = 5.0, True  # QA hiccup: don't block the render
+                if score > best_score:
+                    best, best_score = c, score
+                if fit and score >= 6:
+                    chosen = c
+                    break
+            if chosen:
+                break
+        chosen = chosen or best  # nothing scored well: take the least-bad one
+        if not chosen:
+            if not clips:
+                raise RuntimeError("Pexels returned no usable clips.")
+            clips.append(clips[-1])  # reuse the previous beat's clip
+            continue
+        clips.append(download(chosen, f"raw_{len(clips)}_{i}.mp4"))
+    return clips
+
+
+# -------------------------------------------------- gemini planning & QA
+
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
+def gemini_json(cfg, parts, timeout=90):
+    """generateContent call returning parsed JSON (responseMimeType json)."""
+    model = cfg.get("gemini_qa_model") or "gemini-2.5-flash"
+    r = requests.post(f"{GEMINI_BASE}/models/{model}:generateContent",
+                      headers={"x-goog-api-key": cfg["gemini_api_key"],
+                               "Content-Type": "application/json"},
+                      json={"contents": [{"parts": parts}],
+                            "generationConfig": {"responseMimeType": "application/json"}},
+                      timeout=timeout)
+    r.raise_for_status()
+    txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return json.loads(txt)
+
+
+def frame_matches(cfg, jpeg_bytes, beat_text):
+    """AI vision check: does this frame fit the narration line spoken at this
+    timestamp? Returns (score_0_to_10, fit_bool)."""
+    import base64
+    prompt = ("You are quality-checking b-roll for a calm wellness video. "
+              "The narration spoken over this exact moment is:\n\""
+              + beat_text + "\"\n\nDoes the attached frame visually fit that "
+              "line (subject, mood, setting)? Judge strictly: a generic gym "
+              "shot under a line about sleep is a bad fit. "
+              'Reply as JSON: {"score": 0-10, "fit": true|false}.')
+    data = gemini_json(cfg, [
+        {"text": prompt},
+        {"inlineData": {"mimeType": "image/jpeg",
+                        "data": base64.b64encode(jpeg_bytes).decode()}},
+    ])
+    return float(data.get("score", 0)), bool(data.get("fit"))
+
+
+def veo_clip_ok(cfg, clip, beat_text):
+    """Run the same frame check on a generated Veo clip's middle frame."""
+    jpg = clip + ".qa.jpg"
+    try:
+        mid = media_duration(clip) / 2
+        run(["ffmpeg", "-y", "-ss", f"{mid:.2f}", "-i", clip,
+             "-frames:v", "1", "-q:v", "3", jpg])
+        with open(jpg, "rb") as f:
+            score, fit = frame_matches(cfg, f.read(), beat_text)
+        return fit or score >= 5
+    except Exception:
+        return True  # QA hiccup: keep the clip we paid for
+
+
+def plan_beats(cfg, beats, brief, cap):
+    """Hybrid planner: ask Gemini which beats deserve generated (Veo) footage
+    and which are classic stock material, plus a tailored prompt/query for
+    each. Returns [{"source","veo_prompt","pexels_query"}, ...] per beat."""
+    listing = "\n".join(f'{i + 1}. ({d:.1f}s) "{t}"'
+                        for i, (t, _q, d) in enumerate(beats))
+    prompt = (
+        "You are planning visuals for a faceless wellness YouTube video. The "
+        "narration is split into timed beats; each beat gets exactly one clip, "
+        "either GENERATED by an AI video model (Veo - best for specific, "
+        "imaginative, metaphorical, or hard-to-find-in-stock moments) or found "
+        "on Pexels STOCK (best for generic scenes: parks, kitchens, yoga mats, "
+        f"sunrises, people walking). At most {cap} beats may use Veo - spend "
+        "them only where generated footage clearly beats stock.\n\nBeats:\n"
+        + listing
+        + "\n\nOverall visual direction for the video: "
+        + (brief.get("visual_direction") or "n/a")
+        + '\n\nReply as JSON: {"beats": [{"n": 1, "source": "veo" or "pexels", '
+        '"veo_prompt": "detailed cinematic shot prompt (veo beats only, else empty)", '
+        '"pexels_query": "2-3 word stock search (always provide, used as fallback)"}]}'
+        " - exactly one entry per beat, in order."
+    )
+    data = gemini_json(cfg, [{"text": prompt}])
+    entries = data.get("beats") or []
+    if len(entries) != len(beats):
+        raise RuntimeError(f"planner returned {len(entries)} entries for {len(beats)} beats")
+    specs, veo_n = [], 0
+    for e in entries:
+        src = "veo" if (e.get("source") == "veo" and veo_n < cap) else "pexels"
+        if src == "veo":
+            veo_n += 1
+        specs.append({"source": src,
+                      "veo_prompt": (e.get("veo_prompt") or "").strip(),
+                      "pexels_query": (e.get("pexels_query") or "").strip()})
+    return specs
+
+
+# ------------------------------------------------------------ veo visuals
+
+
+def veo_prompt(beat_text, brief):
+    style = (brief.get("visual_direction") or "").strip()[:300]
+    p = ("Cinematic b-roll shot for a calm wellness brand video. Photorealistic, "
+         "soft natural light, gentle camera movement, no on-screen text, no "
+         "logos, no people talking to camera. Visualize this moment from the "
+         "narration: " + beat_text)
+    if style:
+        p += " Overall visual direction for the video: " + style
+    return p
+
+
+def veo_generate_clip(cfg, prompt, seconds, workdir, stem):
+    """Generate one clip with Google Veo via the Gemini API (long-running
+    operation: submit, poll, download). Raises on any failure so the caller
+    can fall back to Pexels for that beat."""
+    key = cfg["gemini_api_key"]
+    model = cfg.get("veo_model") or "veo-3.0-fast-generate-001"
+    headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+    body = {"instances": [{"prompt": prompt}],
+            "parameters": {"aspectRatio": "16:9"}}
+    if "3.1" in model:  # Veo 3.1 accepts 4/6/8s; Veo 3.0 is fixed at 8s
+        body["parameters"]["durationSeconds"] = next(
+            (d for d in (4, 6, 8) if d + 0.2 >= seconds), 8)
+    r = requests.post(f"{GEMINI_BASE}/models/{model}:predictLongRunning",
+                      headers=headers, json=body, timeout=60)
+    r.raise_for_status()
+    op = r.json()["name"]
+    deadline = time.time() + float(cfg.get("veo_timeout_minutes") or 6) * 60
+    while time.time() < deadline:
+        time.sleep(10)
+        r = requests.get(f"{GEMINI_BASE}/{op}", headers=headers, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        if not data.get("done"):
+            continue
+        if "error" in data:
+            raise RuntimeError(f"Veo: {data['error'].get('message', data['error'])}")
+        resp = data.get("response", {})
+        # the response shape has varied across Veo releases; check both
+        gv = resp.get("generateVideoResponse") or resp
+        samples = gv.get("generatedSamples") or gv.get("generatedVideos") or []
+        video = (samples[0].get("video") or {}) if samples else {}
+        uri = video.get("uri") or video.get("videoUri")
+        if not uri:
+            raise RuntimeError(f"Veo: no video in response: {str(resp)[:300]}")
+        out = os.path.join(workdir, f"{stem}.mp4")
+        with requests.get(uri, headers={"x-goog-api-key": key}, stream=True,
+                          timeout=300) as dl:
+            dl.raise_for_status()
+            with open(out, "wb") as f:
+                shutil.copyfileobj(dl.raw, f)
+        return out
+    raise RuntimeError("Veo: generation timed out")
+
+
+def gather_beat_clips(cfg, beats, brief, title, workdir):
+    """One clip per narration beat.
+    - 'pexels': stock only (AI frame-check per candidate when QA is on).
+    - 'veo': generate every beat up to veo_max_clips_per_video, rest stock.
+    - 'hybrid': Gemini plans which beats deserve generated footage and which
+      are stock material, with a tailored prompt/query per beat.
+    Every generated clip is frame-checked against its narration line (QA);
+    any Veo failure or QA rejection falls back to stock for that beat."""
+    fallback = pexels_queries(brief, title)
+    has_gem = bool(cfg.get("gemini_api_key"))
+    engine = cfg.get("visuals_engine") or "pexels"
+    if engine in ("veo", "hybrid") and not has_gem:
+        print("  visuals: gemini_api_key missing -> pexels only")
+        engine = "pexels"
+    if engine == "pexels":
+        return fetch_beat_clips(cfg, beats, fallback, workdir)
+
+    cap = int(cfg.get("veo_max_clips_per_video") or 8)
+    qa = has_gem and bool(cfg.get("visual_qa", 1))
+    specs = None
+    if engine == "hybrid":
+        try:
+            specs = plan_beats(cfg, beats, brief, cap)
+            n_veo = sum(1 for s in specs if s["source"] == "veo")
+            print(f"  hybrid plan: {n_veo} Veo + {len(specs) - n_veo} Pexels beats")
+        except Exception as e:
+            print(f"  hybrid planner failed ({e}); Veo for the first {cap} beats")
+    if specs is None:
+        specs = [{"source": "veo" if i < cap else "pexels",
+                  "veo_prompt": "", "pexels_query": ""}
+                 for i in range(len(beats))]
+
+    clips = [None] * len(beats)
+    veo_used = 0
+    stock_beats = []  # (original index, beat with the planner's query)
+    for i, ((text, query, dur), spec) in enumerate(zip(beats, specs)):
+        if spec["source"] == "veo" and veo_used < cap:
+            try:
+                print(f"  veo: beat {i + 1}/{len(beats)} ({dur:.1f}s)...")
+                clip = veo_generate_clip(
+                    cfg, spec["veo_prompt"] or veo_prompt(text, brief),
+                    dur, workdir, f"veo_{i}")
+                veo_used += 1
+                if qa and not veo_clip_ok(cfg, clip, text):
+                    print(f"  veo beat {i + 1}: frame check failed -> stock instead")
+                    clip = None
+                clips[i] = clip
+            except Exception as e:
+                print(f"  veo beat {i + 1} failed ({e}) -> stock instead")
+        if clips[i] is None:
+            stock_beats.append((i, (text, spec["pexels_query"] or query, dur)))
+    if stock_beats:
+        filled = fetch_beat_clips(cfg, [b for _, b in stock_beats], fallback, workdir)
+        for (i, _b), c in zip(stock_beats, filled):
+            clips[i] = c
     return clips
 
 
@@ -218,22 +567,14 @@ def pick_music(cfg, persona):
     return None
 
 
-def build_srt(segments, path):
-    """segments: list of (script_text, start_seconds, duration_seconds)."""
+def build_srt(entries, path):
+    """entries: list of (sentence_text, start_seconds, end_seconds)."""
     def stamp(x):
         h, rem = divmod(x, 3600); m, s = divmod(rem, 60)
         return f"{int(h):02}:{int(m):02}:{int(s):02},{int((s % 1) * 1000):03}"
-    idx = 1
     with open(path, "w", encoding="utf-8") as f:
-        for script, start, dur in segments:
-            sents = sentences(script)
-            words = sum(len(s.split()) for s in sents) or 1
-            t = start
-            for s in sents:
-                d = dur * len(s.split()) / words
-                f.write(f"{idx}\n{stamp(t)} --> {stamp(t + d)}\n{s}\n\n")
-                idx += 1
-                t += d
+        for idx, (text, start, end) in enumerate(entries, 1):
+            f.write(f"{idx}\n{stamp(start)} --> {stamp(end)}\n{text}\n\n")
 
 
 # ---------------------------------------------------------------- rendering
@@ -241,14 +582,16 @@ def build_srt(segments, path):
 def render(cfg, brief, title, persona, workdir):
     outros = cfg.get("outros", {})
     outro_text = outros.get(persona) or outros.get("default") or ""
-    endcard = os.path.join(BRAND, "endcard.png")
+    endcard_mp4 = os.path.join(BRAND, "endcard.mp4")
+    endcard_png = os.path.join(BRAND, "endcard.png")
+    ding = os.path.join(BRAND, "ding.mp3")
     intro = os.path.join(BRAND, "intro.mp4")
 
-    voice_main = tts(brief["voiceover_script"], cfg, persona, workdir)
+    voice_main, timing_main = tts(brief["voiceover_script"], cfg, persona, workdir)
     main_dur = media_duration(voice_main)
-    outro_dur = 0.0
+    outro_dur, timing_outro = 0.0, None
     if outro_text:
-        voice_outro = tts(outro_text, cfg, persona, workdir, stem="outro")
+        voice_outro, timing_outro = tts(outro_text, cfg, persona, workdir, stem="outro")
         outro_dur = media_duration(voice_outro)
         voice_all = "voice_all.m4a"
         run(["ffmpeg", "-y", "-i", os.path.basename(voice_main),
@@ -261,45 +604,68 @@ def render(cfg, brief, title, persona, workdir):
     total = main_dur + outro_dur
     print(f"  voiceover: {main_dur:.1f}s + {outro_dur:.1f}s outro")
 
-    clips = fetch_clips(cfg, pexels_queries(brief, title), workdir, main_dur)
-    print(f"  b-roll: {len(clips)} clips")
+    # The end card fills the outro (plus a hold so it doesn't cut away too
+    # fast); the b-roll beats only need to cover the main script.
+    hold = float(cfg.get("endcard_hold_seconds", ENDCARD_HOLD))
+    use_endcard = outro_dur > 0 and (os.path.exists(endcard_mp4) or os.path.exists(endcard_png))
 
-    # normalize every clip to the same format so concat is safe
+    # One clip per narration beat, cut to the beat's real speech time (word
+    # boundaries from edge-tts), so the visuals follow what is being said.
+    beats = script_beats(brief["voiceover_script"], main_dur, timing_main)
+    if not use_endcard and main_dur > 0:
+        scale = total / main_dur
+        beats = [(t, q, d * scale) for t, q, d in beats]
+    engine = "veo" if ((cfg.get("visuals_engine") or "pexels") == "veo"
+                       and cfg.get("gemini_api_key")) else "pexels"
+    print(f"  visuals: {engine}, {len(beats)} narration beats")
+    clips = gather_beat_clips(cfg, beats, brief, title, workdir)
+    print(f"  b-roll: {len(clips)} beat-aligned clips")
+
+    # normalize every clip to the same format so concat is safe; tpad clones
+    # the last frame when a stock clip is shorter than its beat
     norm = []
-    for i, c in enumerate(clips):
+    for i, (c, (_t, _q, dur)) in enumerate(zip(clips, beats)):
         out = os.path.join(workdir, f"norm_{i}.mp4")
-        run(["ffmpeg", "-y", "-i", c, "-t", str(CLIP_SECONDS),
+        run(["ffmpeg", "-y", "-i", c,
              "-vf", f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-                    f"crop={WIDTH}:{HEIGHT},fps={FPS},setsar=1",
+                    f"crop={WIDTH}:{HEIGHT},fps={FPS},setsar=1,"
+                    f"tpad=stop_mode=clone:stop_duration={dur:.3f}",
+             "-t", f"{dur:.3f}",
              "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", out])
         norm.append(out)
 
-    # the end card fills the outro; b-roll only needs to cover the main script
-    use_endcard = outro_dur > 0 and os.path.exists(endcard)
-    broll_target = main_dur if use_endcard else total
+    end_len = 0.0
     if use_endcard:
-        run(["ffmpeg", "-y", "-loop", "1", "-t", str(outro_dur + 0.7),
-             "-i", endcard,
-             "-vf", f"scale={WIDTH}:{HEIGHT},fps={FPS},setsar=1,fade=in:d=0.5",
-             "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-             "-pix_fmt", "yuv420p", os.path.join(workdir, "norm_end.mp4")])
+        end_len = outro_dur + hold + 0.7
+        if os.path.exists(endcard_mp4):
+            # animated card (bell ding-ding + subscribe click); hold its last
+            # frame for however long the outro + hold needs
+            run(["ffmpeg", "-y", "-i", endcard_mp4,
+                 "-vf", f"scale={WIDTH}:{HEIGHT},fps={FPS},setsar=1,"
+                        f"tpad=stop_mode=clone:stop_duration={end_len:.3f}",
+                 "-t", f"{end_len:.3f}",
+                 "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                 "-pix_fmt", "yuv420p", os.path.join(workdir, "norm_end.mp4")])
+        else:
+            run(["ffmpeg", "-y", "-loop", "1", "-t", f"{end_len:.3f}",
+                 "-i", endcard_png,
+                 "-vf", f"scale={WIDTH}:{HEIGHT},fps={FPS},setsar=1,fade=in:d=0.5",
+                 "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                 "-pix_fmt", "yuv420p", os.path.join(workdir, "norm_end.mp4")])
 
     concat_list = os.path.join(workdir, "list.txt")
     with open(concat_list, "w", encoding="utf-8") as f:
-        need, i = broll_target + 0.3, 0
-        while need > 0:
-            clip = norm[i % len(norm)]
+        for clip in norm:
             f.write(f"file '{os.path.basename(clip)}'\n")
-            need -= CLIP_SECONDS
-            i += 1
         if use_endcard:
             f.write("file 'norm_end.mp4'\n")
 
     srt = os.path.join(workdir, "captions.srt")
-    segs = [(brief["voiceover_script"], 0.0, main_dur)]
+    entries = sentence_times(brief["voiceover_script"], main_dur, timing_main)
     if outro_text:
-        segs.append((outro_text, main_dur, outro_dur))
-    build_srt(segs, srt)
+        entries += [(s, main_dur + b, main_dur + e)
+                    for s, b, e in sentence_times(outro_text, outro_dur, timing_outro)]
+    build_srt(entries, srt)
 
     music = pick_music(cfg, persona)
     print(f"  music: {os.path.basename(music) if music else 'none found'}")
@@ -313,21 +679,45 @@ def render(cfg, brief, title, persona, workdir):
         vf_parts.append(f"drawtext=text='{wm}':fontcolor=white@0.7:fontsize=36:"
                         f"x=w-tw-40:y=40:shadowx=2:shadowy=2")
 
+    # video runs past the voice while the end card holds; audio is padded to
+    # match, and the bell ding lands 2.0s into the animated card
+    tail = (end_len - outro_dur) if use_endcard else 0.5
+    vid_total = total + tail
+    use_ding = use_endcard and os.path.exists(endcard_mp4) and os.path.exists(ding)
+
     body = "body.mp4" if os.path.exists(intro) else "final.mp4"
     cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt",
            "-i", voice_all]
+    idx = 2
+    music_idx = ding_idx = None
+    if music:
+        cmd += ["-stream_loop", "-1", "-i", music]
+        music_idx = idx
+        idx += 1
+    if use_ding:
+        cmd += ["-i", ding]
+        ding_idx = idx
+        idx += 1
+
+    ding_ms = int((main_dur + 2.0) * 1000)
+    af = []
+    if use_ding:
+        af.append(f"[{ding_idx}:a]adelay={ding_ms}|{ding_ms},volume=0.5[dg]")
+        af.append(f"[1:a]apad=pad_dur={tail + 1:.2f}[vp0]")
+        af.append("[vp0][dg]amix=inputs=2:normalize=0[vp]")
+    else:
+        af.append(f"[1:a]apad=pad_dur={tail + 1:.2f}[vp]")
     if music:
         vol = cfg.get("music_volume", 0.09)
-        cmd += ["-stream_loop", "-1", "-i", music,
-                "-filter_complex",
-                f"[2:a]volume={vol}[m];[1:a][m]amix=inputs=2:duration=first:"
-                f"dropout_transition=3,afade=t=out:st={max(total - 2, 0)}:d=2[a]",
-                "-map", "0:v", "-map", "[a]"]
+        af.append(f"[{music_idx}:a]volume={vol}[m]")
+        af.append(f"[vp][m]amix=inputs=2:duration=first:dropout_transition=3,"
+                  f"afade=t=out:st={max(vid_total - 2.5, 0):.2f}:d=2.5[a]")
     else:
-        cmd += ["-map", "0:v", "-map", "1:a"]
+        af.append(f"[vp]afade=t=out:st={max(vid_total - 1.5, 0):.2f}:d=1.5[a]")
+    cmd += ["-filter_complex", ";".join(af), "-map", "0:v", "-map", "[a]"]
     if vf_parts:
         cmd += ["-vf", ",".join(vf_parts)]
-    cmd += ["-t", str(total + 0.5),
+    cmd += ["-t", f"{vid_total:.3f}",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
             "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
             "-movflags", "+faststart", body]
@@ -356,7 +746,8 @@ def upload_unlisted(yt, path, brief, permalink):
     body = {
         "snippet": {"title": (brief.get("youtube_title") or "Manifested Fit")[:100],
                     "description": desc, "categoryId": "26"},
-        "status": {"privacyStatus": "unlisted", "selfDeclaredMadeForKids": False},
+        "status": {"privacyStatus": "unlisted", "selfDeclaredMadeForKids": False,
+                   "embeddable": True},
     }
     media = MediaFileUpload(path, mimetype="video/mp4", resumable=True)
     req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
@@ -382,9 +773,12 @@ def upload_captions(yt, video_id, srt):
 
 
 def make_public(yt, video_id):
+    # part="status" REPLACES the whole status object: omitting embeddable here
+    # silently turns embedding off ("playback disabled by the video owner").
     yt.videos().update(part="status", body={
         "id": video_id,
-        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
+        "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False,
+                   "embeddable": True},
     }).execute()
 
 
