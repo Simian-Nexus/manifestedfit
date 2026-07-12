@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Manifested Fit Content Engine
  * Description: Supervised AI drafting engine. A daily cron (or the Run Now button) picks the day's persona and next queued topic, asks the AI to write the post (with a [VIDEO EMBED] placeholder and a YouTube video brief), saves it as a DRAFT under the persona's byline, and sends a Telegram notification for review. A companion video workflow can fetch briefs and attach approved YouTube videos via REST. Nothing is ever auto-published.
- * Version: 0.4.2
+ * Version: 0.7.0
  * Author: Spinning Monkey Studios
  */
 
@@ -101,12 +101,18 @@ class MFCE_Engine {
         add_action('admin_post_mfce_test_telegram', array(__CLASS__, 'handle_test_telegram'));
         add_action('admin_post_mfce_register_webhook', array(__CLASS__, 'handle_register_webhook'));
         add_action('rest_api_init', array(__CLASS__, 'register_rest'));
+        add_filter('the_content', array(__CLASS__, 'hide_video_placeholder'), 8);
+        // News rewrites: the theme fires this after each fresh RSS fetch.
+        add_action('mf_wellness_news_fetched', array(__CLASS__, 'queue_news_items'));
+        add_action('mfce_process_news', array(__CLASS__, 'process_news_queue'));
     }
 
     public static function defaults() {
         return array(
             'enabled'            => 0,
             'auto_topic'         => 1, // queue empty -> the AI invents today's topic
+            'news_rewrite'       => 1, // rewrite fresh wellness-news headlines into drafts
+            'news_max_per_day'   => 2, // cap on news-rewrite drafts per day (0 = paused)
             'provider'           => 'anthropic', // anthropic | gemini | openai | grok | custom
             'anthropic_api_key'  => '',
             'model'              => 'claude-opus-4-8',
@@ -120,6 +126,7 @@ class MFCE_Engine {
             'custom_api_key'     => '', // optional for local models
             'custom_model'       => '',
             'max_tokens'         => 8000,
+            'pexels_api_key'     => '', // featured images: first Pexels result for the focus keyword
             'telegram_bot_token' => '',
             'telegram_chat_id'   => '',
             'cron_secret'        => '',
@@ -297,9 +304,25 @@ class MFCE_Engine {
             self::mark_topic_used($topic['id'], $post_id);
         }
 
-        $s = self::settings();
-        $s['last_run_date'] = $today;
-        update_option(self::OPT_SETTINGS, $s, false);
+        // Featured image: first Pexels landscape photo for the focus keyword (best effort).
+        $img_query = !empty($result['focus_keyword']) ? $result['focus_keyword'] : $result['title'];
+        self::set_featured_from_pexels($post_id, $img_query);
+
+        // Let companion plugins (e.g. the affiliate ad planner) react to the new draft.
+        do_action('mfce_draft_created', $post_id, $result, $persona, $pick);
+
+        // Only scheduled runs consume the daily slot: a manual Run Now (or an
+        // evening run that lands past midnight server time) must never make
+        // the next morning's cron skip.
+        if (strpos($context, 'cron') !== false) {
+            $s = self::settings();
+            $s['last_run_date'] = $today;
+            update_option(self::OPT_SETTINGS, $s, false);
+        }
+
+        // Running low on topics? Ask the AI for suggestions and offer them in
+        // Telegram as one-tap approvals.
+        self::maybe_suggest_topics($s);
 
         $edit_url = admin_url('post.php?post=' . $post_id . '&action=edit');
         $msg = "Manifested Fit Engine\n"
@@ -310,6 +333,90 @@ class MFCE_Engine {
         self::telegram_send_draft_notice($s, $post_id, $msg);
 
         return self::finish(true, 'Draft #' . $post_id . ' created by ' . $persona['name'] . ' via ' . $context . ': "' . $result['title'] . '"', $post_id, false);
+    }
+
+    /**
+     * Best-effort featured image: search Pexels for the query, sideload the
+     * first landscape result into the media library, set it as the thumbnail.
+     * Silent no-op when no key is configured or nothing matches.
+     */
+    /** First matching Pexels landscape photo URL for a query, or false. */
+    public static function pexels_photo_url($s, $query, $skip = 0) {
+        if (empty($s['pexels_api_key'])) { return false; }
+        $response = wp_remote_get(
+            'https://api.pexels.com/v1/search?query=' . rawurlencode($query . ' wellness') . '&orientation=landscape&per_page=' . ($skip + 1),
+            array('timeout' => 30, 'headers' => array('Authorization' => $s['pexels_api_key']))
+        );
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            self::log('WARN: Pexels search failed for "' . $query . '"');
+            return false;
+        }
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        $photo = isset($data['photos'][$skip]) ? $data['photos'][$skip] : (isset($data['photos'][0]) ? $data['photos'][0] : null);
+        if (empty($photo['src'])) {
+            self::log('WARN: Pexels had no photo for "' . $query . '"');
+            return false;
+        }
+        return !empty($photo['src']['large2x']) ? $photo['src']['large2x'] : $photo['src']['large'];
+    }
+
+    public static function set_featured_from_pexels($post_id, $query) {
+        $s = self::settings();
+        if (empty($s['pexels_api_key']) || has_post_thumbnail($post_id)) { return false; }
+        $url = self::pexels_photo_url($s, $query);
+        if (!$url) { return false; }
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        // Pexels CDN URLs have no extension in the path; give sideload a real filename.
+        $attachment_id = media_sideload_image($url . '#.jpg', $post_id, $query, 'id');
+        if (is_wp_error($attachment_id)) {
+            self::log('WARN: featured image sideload failed: ' . $attachment_id->get_error_message());
+            return false;
+        }
+        set_post_thumbnail($post_id, $attachment_id);
+        self::log('OK: featured image set on #' . $post_id . ' (Pexels, "' . $query . '")');
+        return true;
+    }
+
+    /**
+     * Front end: never show a raw [VIDEO EMBED] placeholder to readers.
+     * While the real video is pending, show a topical Pexels photo in its
+     * place instead (cached in post meta; skipped silently without a key).
+     * The stored content keeps the placeholder, so the video worker's embed
+     * step still finds and replaces it later.
+     */
+    public static function hide_video_placeholder($content) {
+        if (is_admin()) { return $content; }
+        if (!preg_match('/<p>\s*\[VIDEO EMBED\]\s*<\/p>/i', $content)) { return $content; }
+
+        $replacement = '';
+        $post_id = get_the_ID();
+        if ($post_id) {
+            $img = get_post_meta($post_id, 'mfce_standin_img', true);
+            if ($img === '') {
+                // Pick a query that matches the surrounding prose: the first
+                // heading after the placeholder, else the focus keyword/title.
+                $query = '';
+                if (preg_match('/\[VIDEO EMBED\]\s*<\/p>.*?<h[23][^>]*>(.*?)<\/h[23]>/is', $content, $hm)) {
+                    $query = wp_strip_all_tags($hm[1]);
+                }
+                if ($query === '') { $query = (string) get_post_meta($post_id, 'rank_math_focus_keyword', true); }
+                if ($query === '') { $query = get_the_title($post_id); }
+                $engine_s = self::settings();
+                if (!empty($engine_s['pexels_api_key'])) {
+                    // Only cache the outcome when a key exists - otherwise the
+                    // 'none' would stick forever once a key is finally added.
+                    $url = self::pexels_photo_url($engine_s, $query, 1); // skip #0: usually the featured image
+                    $img = $url ? $url : 'none';
+                    update_post_meta($post_id, 'mfce_standin_img', $img);
+                }
+            }
+            if ($img && $img !== 'none') {
+                $replacement = '<figure class="mfce-standin" style="margin:2rem 0"><img src="' . esc_url($img) . '" alt="" loading="lazy" style="width:100%;border-radius:12px"></figure>';
+            }
+        }
+        return preg_replace('/<p>\s*\[VIDEO EMBED\]\s*<\/p>/i', $replacement, $content, 1);
     }
 
     /** Log + optionally notify Telegram about failures, then return a result array. */
@@ -477,8 +584,8 @@ class MFCE_Engine {
         }
     }
 
-    /** Route a structured-JSON generation to the selected provider. */
-    private static function ai_json($s, $system, $user, $schema) {
+    /** Route a structured-JSON generation to the selected provider. Public so companion plugins (affiliates) can reuse it. */
+    public static function ai_json($s, $system, $user, $schema) {
         switch ($s['provider']) {
             case 'gemini': return self::gemini_json($s, $system, $user, $schema);
             case 'openai':
@@ -881,6 +988,92 @@ class MFCE_Engine {
         return $topic;
     }
 
+    /** Append one pending topic to the queue. Returns the new topic. */
+    public static function add_topic($title, $notes = '', $flags = array()) {
+        $topic = array_merge(array(
+            'id'     => uniqid('t'),
+            'title'  => sanitize_text_field($title),
+            'notes'  => sanitize_text_field($notes),
+            'status' => 'pending',
+        ), $flags);
+        $topics = self::topics();
+        $topics[] = $topic;
+        update_option(self::OPT_TOPICS, $topics, false);
+        return $topic;
+    }
+
+    /** How many topics are still pending in the queue. */
+    private static function pending_topic_count() {
+        $n = 0;
+        foreach (self::topics() as $t) {
+            if (isset($t['status']) && $t['status'] === 'pending') { $n++; }
+        }
+        return $n;
+    }
+
+    /**
+     * Queue running low (<= 2 pending)? Ask the AI for candidate topics and
+     * send them to Telegram with one-tap "Add" buttons. At most once a day.
+     */
+    private static function maybe_suggest_topics($s) {
+        if (self::pending_topic_count() > 2) { return; }
+        if (get_option('mfce_suggest_date') === current_time('Y-m-d')) { return; }
+        if (!self::provider_ready($s)) { return; }
+
+        $recent = array();
+        foreach (get_posts(array('post_status' => array('publish', 'draft', 'pending'), 'numberposts' => 12, 'orderby' => 'date', 'order' => 'DESC')) as $p) {
+            $recent[] = $p->post_title;
+        }
+        $pending = array();
+        foreach (self::topics() as $t) {
+            if (($t['status'] ?? '') === 'pending') { $pending[] = $t['title']; }
+        }
+
+        $system = 'You are the content planner for Manifested Fit (manifestedfit.com/blog), a wellness brand blending manifestation, gentle fitness, and mindset for everyday people. '
+            . 'Suggest 4 fresh blog topics. Practical and doable beats abstract. No medical claims, no income promises. '
+            . 'Categories: ' . implode(', ', self::categories()) . '.';
+        $user = "Recent post titles (do not repeat):\n- " . ($recent ? implode("\n- ", $recent) : '(none)')
+            . "\n\nTopics already queued:\n- " . ($pending ? implode("\n- ", $pending) : '(none)')
+            . "\n\nReturn 4 suggestions, each with a title and short editor notes (angle + 2-3 must-covers).";
+        $schema = array(
+            'type' => 'object',
+            'properties' => array(
+                'suggestions' => array(
+                    'type' => 'array',
+                    'items' => array(
+                        'type' => 'object',
+                        'properties' => array(
+                            'title' => array('type' => 'string'),
+                            'notes' => array('type' => 'string'),
+                        ),
+                        'required' => array('title', 'notes'),
+                        'additionalProperties' => false,
+                    ),
+                ),
+            ),
+            'required' => array('suggestions'),
+            'additionalProperties' => false,
+        );
+        $parsed = self::ai_json($s, $system, $user, $schema);
+        if (is_wp_error($parsed) || empty($parsed['suggestions'])) { return; }
+
+        $store = array();
+        $lines = "Topic queue is nearly empty (" . self::pending_topic_count() . " left). Suggestions - tap to add:\n";
+        $buttons = array();
+        foreach (array_slice($parsed['suggestions'], 0, 4) as $i => $sug) {
+            $id = uniqid('s');
+            $store[$id] = array('title' => sanitize_text_field($sug['title']), 'notes' => sanitize_text_field($sug['notes'] ?? ''));
+            $lines .= "\n" . ($i + 1) . '. ' . $store[$id]['title'] . "\n   " . $store[$id]['notes'] . "\n";
+            $buttons[] = array(array('text' => 'Add #' . ($i + 1), 'callback_data' => 'addtopic:' . $id));
+        }
+        update_option('mfce_tg_suggestions', $store, false);
+        update_option('mfce_suggest_date', current_time('Y-m-d'), false);
+        self::telegram_send($s, $lines . "\nOr just message me a topic of your own and ask me to queue it.", array(
+            'reply_markup' => array('inline_keyboard' => $buttons),
+        ));
+        self::log('OK: queue low - sent ' . count($store) . ' topic suggestions to Telegram.');
+    }
+
     private static function mark_topic_used($id, $post_id) {
         $topics = self::topics();
         foreach ($topics as &$t) {
@@ -896,6 +1089,218 @@ class MFCE_Engine {
     // ------------------------------------------------------------ telegram
 
     /** Generic Telegram Bot API call. Returns the decoded "result" or false. */
+    // -------------------------------------------------------- news rewrites
+
+    /**
+     * Wellness-news rewrite engine. The blog theme fires
+     * `mf_wellness_news_fetched` whenever the front page pulls a fresh batch
+     * of RSS headlines; we queue the ones we have not seen before, then a
+     * one-off wp-cron event turns a capped number per day into ORIGINAL,
+     * source-credited DRAFT posts (commentary, never reproduction; featured
+     * image from Pexels only - publisher photos are agency-licensed and a
+     * citation is not a license). Telegram approval still publishes, same as
+     * every other draft. Once a rewrite is published, the theme swaps that
+     * headline's card to link to our post via news_post_map().
+     */
+
+    const OPT_NEWS = 'mfce_news_queue';
+
+    public static function queue_news_items($items) {
+        $s = self::settings();
+        if (empty($s['news_rewrite']) || !self::provider_ready($s)) { return; }
+        $queue = get_option(self::OPT_NEWS, array());
+        if (!is_array($queue)) { $queue = array(); }
+        $added = 0;
+        foreach ((array) $items as $item) {
+            if (empty($item['title']) || empty($item['link'])) { continue; }
+            $hash = !empty($item['hash']) ? $item['hash'] : md5($item['title']);
+            if (isset($queue[$hash])) { continue; }
+            $queue[$hash] = array(
+                'title'  => sanitize_text_field($item['title']),
+                'source' => sanitize_text_field(isset($item['source']) ? $item['source'] : ''),
+                'link'   => esc_url_raw($item['link']),
+                'time'   => isset($item['time']) ? (int) $item['time'] : 0,
+                'status' => 'pending',
+                'queued' => time(),
+            );
+            $added++;
+        }
+        if ($added) {
+            update_option(self::OPT_NEWS, array_slice($queue, -80, null, true), false);
+            self::log('News: queued ' . $added . ' new headline(s) for rewrite.');
+        }
+        $has_pending = false;
+        foreach ($queue as $q) {
+            if (isset($q['status']) && $q['status'] === 'pending') { $has_pending = true; break; }
+        }
+        if ($has_pending && !wp_next_scheduled('mfce_process_news')) {
+            wp_schedule_single_event(time() + 30, 'mfce_process_news');
+        }
+    }
+
+    public static function process_news_queue() {
+        if (function_exists('set_time_limit')) { @set_time_limit(300); }
+        $s = self::settings();
+        if (empty($s['news_rewrite']) || !self::provider_ready($s)) { return; }
+        $cap = (int) $s['news_max_per_day'];
+        if ($cap <= 0) { return; }
+
+        // Solemn days: no news chatter at all (matches the posting schedule).
+        $now = new DateTime('now', wp_timezone());
+        $pick = self::persona_for_date($now);
+        if ($pick['mode'] === 'solemn') { return; }
+
+        $day = get_option('mfce_news_day', array());
+        $today = $now->format('Y-m-d');
+        if (!is_array($day) || !isset($day['date']) || $day['date'] !== $today) {
+            $day = array('date' => $today, 'count' => 0);
+        }
+
+        $queue = get_option(self::OPT_NEWS, array());
+        if (!is_array($queue) || !$queue) { return; }
+        $pending = array_filter($queue, function ($q) {
+            return isset($q['status']) && $q['status'] === 'pending';
+        });
+        uasort($pending, function ($a, $b) { return (int) $b['time'] - (int) $a['time']; });
+
+        foreach ($pending as $hash => $item) {
+            if ($day['count'] >= $cap) { break; }
+            $result = self::generate_news_post($s, $hash, $item, $pick);
+            if (is_wp_error($result)) {
+                $queue[$hash]['status'] = 'failed';
+                self::log('News rewrite failed ("' . $item['title'] . '"): ' . $result->get_error_message());
+            } else {
+                $queue[$hash]['status']  = 'done';
+                $queue[$hash]['post_id'] = $result;
+                $day['count']++;
+            }
+            update_option(self::OPT_NEWS, $queue, false);
+            update_option('mfce_news_day', $day, false);
+        }
+    }
+
+    /** Best-effort plain text of the source article, or '' when unusable. */
+    private static function fetch_article_text($url) {
+        $r = wp_remote_get($url, array(
+            'timeout'     => 25,
+            'redirection' => 5,
+            'user-agent'  => 'Mozilla/5.0 (compatible; ManifestedFitBot/1.0; +https://manifestedfit.com)',
+        ));
+        if (is_wp_error($r) || wp_remote_retrieve_response_code($r) >= 400) { return ''; }
+        $html = (string) wp_remote_retrieve_body($r);
+        $html = preg_replace('#<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>#is', ' ', $html);
+        if (!preg_match_all('#<p[^>]*>(.*?)</p>#is', $html, $m)) { return ''; }
+        $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags(implode("\n", $m[1]))));
+        if (strlen($text) < 400) { return ''; } // paywall or JS-redirect shell page
+        return function_exists('mb_substr') ? mb_substr($text, 0, 5000) : substr($text, 0, 5000);
+    }
+
+    private static function generate_news_post($s, $hash, $item, $pick) {
+        $personas = self::personas();
+        $persona = $personas[$pick['persona']];
+        $author = get_user_by('login', $persona['login']);
+        if (!$author) { return new WP_Error('mfce_news', 'WP user not found for persona login "' . $persona['login'] . '".'); }
+
+        $article = self::fetch_article_text($item['link']);
+        $source_name = $item['source'] !== '' ? $item['source'] : 'the original report';
+
+        $system = "You are a columnist for Manifested Fit (manifestedfit.com/blog), a wellness brand blending manifestation, gentle fitness, and mindset for everyday people.\n\n"
+            . "You write as the persona \"{$persona['name']}\". Voice: {$persona['voice']}\n\n"
+            . "Task: write an ORIGINAL news-reaction column about a wellness headline. This is commentary, not reproduction:\n"
+            . "- Summarize what was reported in YOUR OWN words (2-3 short paragraphs at most). Never copy sentences from the source.\n"
+            . "- Credit the source by name in the prose (e.g. \"as reported by {$source_name}\"). A full linked citation is appended automatically, so do not add links yourself.\n"
+            . "- Then add the Manifested Fit take: what this means for everyday people, and one practical thing the reader can do today.\n"
+            . "- 450-750 words. No medical claims. Personas are voice bylines only and never claim credentials.\n"
+            . "- Mention the free 7-Day Mind-Body Reset at manifestedfit.com once, naturally, near the end.\n"
+            . "- content_html: only <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>. No links, no <h1>, no inline styles.\n"
+            . "- excerpt: one sentence, max 155 characters. slug: lowercase-hyphenated. focus_keyword: the 2-4 word phrase to rank for.";
+
+        $user = "Headline: {$item['title']}\nSource: {$source_name}";
+        $user .= $article !== ''
+            ? "\n\nArticle text (for grounding only - do not copy its wording):\n" . $article
+            : "\n\nThe article body could not be retrieved. Write from the headline alone: keep claims about the report modest (\"a new report suggests...\") and focus on the practical wellness angle.";
+
+        $schema = array(
+            'type' => 'object',
+            'properties' => array(
+                'title'         => array('type' => 'string'),
+                'slug'          => array('type' => 'string'),
+                'excerpt'       => array('type' => 'string'),
+                'focus_keyword' => array('type' => 'string'),
+                'content_html'  => array('type' => 'string'),
+            ),
+            'required' => array('title', 'slug', 'excerpt', 'focus_keyword', 'content_html'),
+            'additionalProperties' => false,
+        );
+        $parsed = self::ai_json($s, $system, $user, $schema);
+        if (is_wp_error($parsed)) { return $parsed; }
+        if (empty($parsed['title']) || empty($parsed['content_html'])) {
+            return new WP_Error('mfce_parse', 'News rewrite response was missing title or content.');
+        }
+
+        // Guaranteed citation block, whatever the model wrote.
+        $citation = '<p class="mfce-news-source"><em>Originally reported by <a href="' . esc_url($item['link']) . '" target="_blank" rel="nofollow noopener">'
+            . esc_html($source_name) . ': &ldquo;' . esc_html($item['title']) . '&rdquo;</a>. The summary and takeaways above are our own.</em></p>';
+
+        $cat_id = 0;
+        $cat = get_term_by('name', 'Wellness News', 'category');
+        if ($cat) {
+            $cat_id = (int) $cat->term_id;
+        } else {
+            $created = wp_insert_term('Wellness News', 'category');
+            if (!is_wp_error($created)) { $cat_id = (int) $created['term_id']; }
+        }
+
+        $post_id = wp_insert_post(array(
+            'post_title'    => wp_strip_all_tags($parsed['title']),
+            'post_name'     => sanitize_title($parsed['slug']),
+            'post_content'  => wp_kses_post($parsed['content_html']) . "\n" . $citation,
+            'post_excerpt'  => sanitize_text_field($parsed['excerpt']),
+            'post_status'   => 'draft', // ALWAYS draft. Telegram approval publishes.
+            'post_author'   => $author->ID,
+            'post_category' => $cat_id ? array($cat_id) : array(),
+            'tags_input'    => array('news'),
+        ), true);
+        if (is_wp_error($post_id)) { return $post_id; }
+
+        update_post_meta($post_id, 'mfce_news_hash', $hash);
+        update_post_meta($post_id, 'mfce_news_source_url', esc_url_raw($item['link']));
+        update_post_meta($post_id, 'mfce_news_source_name', sanitize_text_field($source_name));
+        update_post_meta($post_id, 'mfce_news_source_title', sanitize_text_field($item['title']));
+        if (!empty($parsed['focus_keyword'])) {
+            update_post_meta($post_id, 'rank_math_focus_keyword', sanitize_text_field($parsed['focus_keyword']));
+        }
+        // No mfce_video_status meta: news reactions skip the video pipeline.
+        self::set_featured_from_pexels($post_id, !empty($parsed['focus_keyword']) ? $parsed['focus_keyword'] : $parsed['title']);
+
+        do_action('mfce_draft_created', $post_id, $parsed, $persona, $pick);
+
+        $edit_url = admin_url('post.php?post=' . $post_id . '&action=edit');
+        self::telegram_send_draft_notice($s, $post_id,
+            "Manifested Fit Engine\nNews rewrite draft by {$persona['name']}:\n\"{$parsed['title']}\"\n"
+            . "(from {$source_name}: {$item['title']})\nReview: {$edit_url}");
+        self::log('OK: news rewrite draft #' . $post_id . ' ("' . $parsed['title'] . '")');
+        return (int) $post_id;
+    }
+
+    /** hash => permalink for PUBLISHED news rewrites; the theme uses this to swap card links. */
+    public static function news_post_map($hashes) {
+        if (empty($hashes)) { return array(); }
+        $q = new WP_Query(array(
+            'post_status'    => 'publish',
+            'posts_per_page' => count($hashes),
+            'no_found_rows'  => true,
+            'meta_query'     => array(array('key' => 'mfce_news_hash', 'value' => array_values($hashes), 'compare' => 'IN')),
+        ));
+        $map = array();
+        foreach ($q->posts as $p) {
+            $map[(string) get_post_meta($p->ID, 'mfce_news_hash', true)] = get_permalink($p);
+        }
+        return $map;
+    }
+
+    // ------------------------------------------------------------- telegram
+
     public static function tg_api($s, $method, $body) {
         if (empty($s['telegram_bot_token'])) { return false; }
         $response = wp_remote_post('https://api.telegram.org/bot' . $s['telegram_bot_token'] . '/' . $method, array(
@@ -923,11 +1328,16 @@ class MFCE_Engine {
 
     /** Notify about a draft with approval buttons; remember message_id -> post_id. */
     private static function telegram_send_draft_notice($s, $post_id, $text) {
+        // Make it obvious when publishing now would ship the post without its video.
+        $awaiting_video = get_post_meta($post_id, 'mfce_video_status', true) === 'needed';
         $keyboard = array('inline_keyboard' => array(array(
-            array('text' => 'Publish',    'callback_data' => 'publish:' . $post_id),
+            array('text' => $awaiting_video ? 'Publish w/o video' : 'Publish', 'callback_data' => 'publish:' . $post_id),
             array('text' => 'Keep draft', 'callback_data' => 'keep:' . $post_id),
             array('text' => 'Trash',      'callback_data' => 'trash:' . $post_id),
         )));
+        if ($awaiting_video) {
+            $text .= "\n\nVideo not made yet - run the pipeline from the dashboard on your PC first; it will offer Publish again after the video is embedded.";
+        }
         $result = self::telegram_send($s, $text . "\n\nReply to this message with instructions to have the AI revise the draft.", array('reply_markup' => $keyboard));
         if (is_array($result) && isset($result['message_id'])) {
             $map = get_option('mfce_tg_map', array());
@@ -1119,6 +1529,22 @@ class MFCE_Engine {
 
         self::tg_api($s, 'answerCallbackQuery', array('callback_query_id' => $cb['id']));
 
+        // One-tap topic approval from a suggestions message.
+        if (preg_match('/^addtopic:([a-z0-9]+)$/', (string) $cb['data'], $m)) {
+            $store = get_option('mfce_tg_suggestions', array());
+            if (!is_array($store) || !isset($store[$m[1]])) {
+                self::telegram_send($s, 'That suggestion has expired - ask me for fresh topic ideas any time.');
+                return;
+            }
+            $sug = $store[$m[1]];
+            self::add_topic($sug['title'], $sug['notes'], array('suggested' => 1));
+            unset($store[$m[1]]);
+            update_option('mfce_tg_suggestions', $store, false);
+            self::log('OK: topic added via Telegram suggestion: "' . $sug['title'] . '"');
+            self::telegram_send($s, 'Queued: "' . $sug['title'] . '" (' . self::pending_topic_count() . ' topics now pending).');
+            return;
+        }
+
         if (!preg_match('/^(publish|keep|trash|vidok|vidno):(\d+)$/', (string) $cb['data'], $m)) { return; }
         $action  = $m[1];
         $post_id = (int) $m[2];
@@ -1189,15 +1615,48 @@ class MFCE_Engine {
             }
         }
 
-        // General chat with the configured model.
-        $system = 'You are the Manifested Fit content engine assistant, chatting with the site owner over Telegram. '
-            . 'Manifested Fit is a wellness/manifestation brand with a WordPress blog and a faceless YouTube strategy. '
-            . 'Be helpful and concise (Telegram-sized answers, plain text, no markdown). '
-            . 'You cannot take actions from this chat; drafting happens on the daily schedule and approvals happen via the buttons.';
+        // General chat with the configured model - aware of the blog's state
+        // and able to queue topics via ADD_TOPIC directive lines.
+        $recent = array();
+        foreach (get_posts(array('post_status' => array('publish', 'draft', 'pending'), 'numberposts' => 8, 'orderby' => 'date', 'order' => 'DESC')) as $p) {
+            $recent[] = $p->post_title . ' [' . $p->post_status . ']';
+        }
+        $pending = array();
+        foreach (self::topics() as $t) {
+            if (($t['status'] ?? '') === 'pending') { $pending[] = $t['title']; }
+        }
+        $personas_txt = array();
+        foreach (self::personas() as $p) { $personas_txt[] = $p['name']; }
+
+        $system = 'You are the Manifested Fit content engine assistant, chatting with the site owner (Jonathan) over Telegram. '
+            . 'You ARE the AI inside the WordPress plugin that drafts the daily blog post for manifestedfit.com/blog, a wellness/manifestation brand with a faceless YouTube strategy. '
+            . 'Four columnist personas write the posts: ' . implode(', ', $personas_txt) . '. Schedule: Mon Frankie, Tue Dana, Wed Nadia, Thu Dana, Fri Rowan, weekends random. '
+            . 'Blog categories: ' . implode(', ', self::categories()) . '. '
+            . "\n\nCurrent state:\nPending topic queue (" . count($pending) . '): ' . ($pending ? implode(' | ', $pending) : '(empty - the AI picks daily topics itself)')
+            . "\nRecent posts: " . ($recent ? implode(' | ', $recent) : '(none)')
+            . "\n\nYou CAN add topics to the drafting queue. When the owner asks you to queue/add a topic (or asks for a recommendation and clearly wants it queued), end your reply with one line per topic, exactly in this format:\nADD_TOPIC: topic title | short editor notes"
+            . "\nThose lines are executed and removed before the owner sees your message, so also mention in your normal text what you queued. Do not use ADD_TOPIC when merely brainstorming unless asked to queue."
+            . "\n\nOther actions (publish/trash/revise/video approval) happen via the buttons on notification messages, not from chat. "
+            . 'Be helpful and concise (Telegram-sized answers, plain text, no markdown).';
         $reply = self::ai_text($s, $system, $text);
         if (is_wp_error($reply)) {
             self::telegram_send($s, 'AI call failed: ' . $reply->get_error_message());
             return;
+        }
+        // Execute any ADD_TOPIC directive lines, then strip them from the reply.
+        $added = 0;
+        if (preg_match_all('/^\s*ADD_TOPIC:\s*(.+)$/mi', $reply, $mm)) {
+            foreach ($mm[1] as $line) {
+                $parts = array_map('trim', explode('|', $line, 2));
+                if ($parts[0] === '') { continue; }
+                self::add_topic($parts[0], $parts[1] ?? '', array('via' => 'telegram-chat'));
+                $added++;
+            }
+            $reply = trim(preg_replace('/^\s*ADD_TOPIC:.*$/mi', '', $reply));
+            self::log('OK: ' . $added . ' topic(s) queued via Telegram chat.');
+        }
+        if ($added > 0) {
+            $reply .= "\n\n(" . $added . ' topic' . ($added > 1 ? 's' : '') . ' queued - ' . self::pending_topic_count() . ' now pending.)';
         }
         // Telegram messages cap at 4096 chars.
         self::telegram_send($s, mb_substr($reply, 0, 4000));
@@ -1215,6 +1674,8 @@ class MFCE_Engine {
         $s = self::settings();
         $s['enabled']            = isset($_POST['enabled']) ? 1 : 0;
         $s['auto_topic']         = isset($_POST['auto_topic']) ? 1 : 0;
+        $s['news_rewrite']       = isset($_POST['news_rewrite']) ? 1 : 0;
+        $s['news_max_per_day']   = max(0, (int) ($_POST['news_max_per_day'] ?? $s['news_max_per_day']));
         $provider                = sanitize_text_field(wp_unslash($_POST['provider'] ?? 'anthropic'));
         $s['provider']           = in_array($provider, array('anthropic', 'gemini', 'openai', 'grok', 'custom'), true) ? $provider : 'anthropic';
         // Model fields: dropdown of known ids + free-text override (override wins when filled).
@@ -1228,7 +1689,7 @@ class MFCE_Engine {
         $s['max_tokens']         = max(1000, (int) ($_POST['max_tokens'] ?? $s['max_tokens']));
         $s['telegram_chat_id']   = sanitize_text_field(wp_unslash($_POST['telegram_chat_id'] ?? ''));
         // Secret fields: keep the stored value when the input is left blank.
-        foreach (array('anthropic_api_key', 'gemini_api_key', 'openai_api_key', 'grok_api_key', 'custom_api_key', 'telegram_bot_token') as $secret_field) {
+        foreach (array('anthropic_api_key', 'gemini_api_key', 'openai_api_key', 'grok_api_key', 'custom_api_key', 'pexels_api_key', 'telegram_bot_token') as $secret_field) {
             $val = trim((string) wp_unslash($_POST[$secret_field] ?? ''));
             if ($val !== '') { $s[$secret_field] = $val; }
         }
@@ -1593,6 +2054,8 @@ class MFCE_Engine {
                 <table class="form-table">
                     <tr><th>Enabled (daily cron)</th><td><label><input type="checkbox" name="enabled" <?php checked($s['enabled'], 1); ?>> Allow the daily cron to create a draft</label></td></tr>
                     <tr><th>AI topic fallback</th><td><label><input type="checkbox" name="auto_topic" <?php checked($s['auto_topic'], 1); ?>> If the topic queue is empty, let the AI pick today's topic (day of week, holidays/weekends, persona, and recent posts considered; the pick is added to the queue and flagged in the Telegram notice)</label></td></tr>
+                    <tr><th>News rewrites</th><td><label><input type="checkbox" name="news_rewrite" <?php checked($s['news_rewrite'], 1); ?>> Rewrite fresh Wellness News headlines into original, source-credited draft posts (queued when the blog front page pulls new RSS; drafts go through the usual Telegram approval; published rewrites replace the external link on the news grid)</label>
+                        <p class="description">Max news drafts per day: <input type="number" name="news_max_per_day" min="0" max="12" value="<?php echo (int) $s['news_max_per_day']; ?>" style="width:70px"> (0 pauses processing without forgetting the queue)</p></td></tr>
                     <tr><th>Default AI provider</th><td>
                         <select name="provider">
                             <option value="anthropic" <?php selected($s['provider'], 'anthropic'); ?>>Anthropic (Claude)</option>
@@ -1616,6 +2079,8 @@ class MFCE_Engine {
                     <tr><th>Custom API key (optional)</th><td><input type="password" name="custom_api_key" class="regular-text" placeholder="<?php echo $s['custom_api_key'] ? 'saved - leave blank to keep' : 'leave empty for local models'; ?>" autocomplete="off"></td></tr>
                     <tr><th>Custom model</th><td><input type="text" name="custom_model" class="regular-text" value="<?php echo esc_attr($s['custom_model']); ?>" placeholder="llama3.1:8b"></td></tr>
                     <tr><th>Max tokens</th><td><input type="number" name="max_tokens" value="<?php echo esc_attr($s['max_tokens']); ?>"></td></tr>
+                    <tr><th>Pexels API key</th><td><input type="password" name="pexels_api_key" class="regular-text" placeholder="<?php echo $s['pexels_api_key'] ? 'saved - leave blank to keep' : 'free key from pexels.com/api'; ?>" autocomplete="off">
+                        <p class="description">When set, each new draft gets a featured image: the first Pexels photo matching the post's focus keyword. Same key the video worker uses.</p></td></tr>
                 </table>
                 </div>
                 </details>
