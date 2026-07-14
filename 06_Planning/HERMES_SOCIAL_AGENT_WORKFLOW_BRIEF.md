@@ -1,5 +1,7 @@
 # Hermes Social Agent Workflow Brief
 
+> **Status:** 🟡 Future idea, not started. No Hermes/AI Command Bridge agent team has been built for Manifested Fit as of 2026-07-14; the social/content-readiness work is instead flowing through the WP content engine + Telegram approval loop. Keep this as a design reference if the Hermes integration is picked up later.
+
 Last updated: 2026-05-03
 
 Related project:

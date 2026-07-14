@@ -1,5 +1,7 @@
 # Music, Jingle & Outro Brief
 
+> **Status:** 🟢 Active reference — companion to `VIDEO_PIPELINE_PLAN.md`. Dana Cole's persona music folder is still empty per `NEXT_CONTEXT_BRIEF.md` (2026-07-14); everything else here is live config reference for the video worker.
+
 Last updated: 2026-07-08. Companion to `VIDEO_PIPELINE_PLAN.md`. This file exists so the music prompts and outro lines live in the repo, not in chat history.
 
 ## AI music generator options (for the jingle + persona background tracks)

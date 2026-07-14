@@ -1,5 +1,7 @@
 # Affiliate Application Readiness
 
+> **Status:** 🟢 Active reference — still accurate. No affiliate programs are approved/live yet as of 2026-07-14 (per `NEXT_CONTEXT_BRIEF.md`); this is the read-first doc before any application work.
+
 Last updated: 2026-05-03
 
 ## Current Reality

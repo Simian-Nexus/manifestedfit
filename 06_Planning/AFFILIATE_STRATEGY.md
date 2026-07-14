@@ -1,5 +1,7 @@
 # Affiliate Strategy
 
+> **Status:** 🟢 Active reference — funnel, offer criteria, and compliance guardrails are still the live plan. Mindvalley remains aspirational-only (75k-follower bar, per `AFFILIATE_APPLICATION_READINESS.md`); no offers are approved yet.
+
 ## Core Offer
 
 Initial aspirational offer: Mindvalley.

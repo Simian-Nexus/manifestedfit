@@ -1,5 +1,7 @@
 # Manifested Fit — YouTube & Affiliate Action Plan
 
+> **Status:** 🟡 Superseded direction, partly still useful — see `_INDEX.md`. The Higgsfield/Lane A+B standalone YouTube-channel plan proposed here was **not** the path actually built; the project instead built automated blog-companion videos (see `VIDEO_PIPELINE_PLAN.md`, now live). §7 (affiliate money plan) and §8 (YouTube safety note) remain valid general reference. Don't treat the 30-day sprint or tool stack (§4, §9) as current marching orders.
+
 Last updated: 2026-07-05
 Owner: Jonathan
 Goal: Two income streams from a faceless AI wellness/spiritual channel — (1) YouTube ad revenue from views/engagement, and (2) affiliate commissions — with Claude running a supervised, scheduled content engine and reporting on what to do / what was done.

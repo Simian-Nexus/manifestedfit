@@ -1,5 +1,7 @@
 # Launch Checklist
 
+> **Status:** 🟡 Partially done. The site is live and most pre-launch items are complete. Genuinely still open: analytics (GA4/Search Console — per `NEXT_CONTEXT_BRIEF.md`, due the week of 2026-07-13) and a production email platform to replace the CSV bridge. Content-launch and email-launch sections below are unstarted and now overlap with newer docs (`CONTENT_SYSTEM.md`, `AFFILIATE_APPLICATION_READINESS.md`).
+
 ## Before Public Traffic
 
 - [ ] Add real FTP/FTPS credentials to `07_Deploy/targets/prod/config.json`.

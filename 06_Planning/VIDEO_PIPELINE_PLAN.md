@@ -1,5 +1,7 @@
 # Automated Video Pipeline Plan (2026-07-06)
 
+> **Status:** 🟢 Active — this is the plan that was actually built and is running (superseding `ACTION_PLAN_2026-07.md`'s standalone-channel idea). Most of "What the external worker must do" and the "Next actions" checklist below is now done and gone further than this doc describes — for current build state read `Brain/CURRENT_STATE.md` and `NEXT_CONTEXT_BRIEF.md` first; treat this file as the original design rationale, not the live task list.
+
 Goal: every daily blog draft gets a 60–90s faceless YouTube companion video,
 generated automatically, approved by Jonathan in Telegram, uploaded to the
 Manifested Fit YouTube channel, and embedded into the draft — with Telegram

@@ -1,3 +1,7 @@
+[ARCHIVED 2026-07-14 - superseded status snapshot. Current state lives in
+Brain/CURRENT_STATE.md and NEXT_CONTEXT_BRIEF.md at the project root - read
+those instead. Kept here only as a historical checkpoint.]
+
 Project Folder
 D:\JonoFiles\Projects\01_Business\Spinning_Monkey_Studios\02_Active_Projects\Manifested_Fit
 Where We Left Off

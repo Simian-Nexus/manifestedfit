@@ -1,5 +1,7 @@
 # Affiliate Links Guide
 
+> **Status:** 🟡 Active but incomplete. Accurate for the static funnel's `/resources/` page. It does **not** yet cover the newer WordPress plugin `manifested-fit-affiliates` (v0.1.0, deployed, needs activation + real offers per `NEXT_CONTEXT_BRIEF.md`), which drives in-post "Partner pick" ad cards on the blog — that's a second, separate offer registry inside wp-admin.
+
 ## Where Links Live
 
 Public offer links live in:

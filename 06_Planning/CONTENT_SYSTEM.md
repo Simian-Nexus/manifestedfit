@@ -1,5 +1,7 @@
 # Content System
 
+> **Status:** 🟡 Not started / low priority. This manual Pinterest-led weekly rhythm predates the automated WP content engine (AI blog drafts, news-rewrite engine, video worker) that now runs the actual content pipeline. No Pinterest pins have shipped per any 2026-07 progress note. Treat as a dormant plan, not current process — revisit only if Pinterest becomes a deliberate traffic push.
+
 ## Weekly Rhythm
 
 Create one theme per week, then split it into assets:

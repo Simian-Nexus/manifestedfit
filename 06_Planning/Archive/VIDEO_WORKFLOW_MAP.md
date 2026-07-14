@@ -1,5 +1,7 @@
 # Video Workflow Map
 
+> **Status:** 📦 Archived 2026-07-14 — historical. A one-time GenSpark-to-Codex concept mapping from the project's early conception (2026-05-01), since superseded by what was actually built. Kept for provenance only; not a working reference.
+
 Source video: `https://www.youtube.com/watch?v=42UsykZzCRQ`
 
 ## Affiliate Platform Answer
