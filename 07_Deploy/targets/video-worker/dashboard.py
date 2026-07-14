@@ -53,8 +53,9 @@ def worker_running():
 @app.get("/api/state")
 def api_state():
     cfg = load_config()
+    gemini_api_key_set = bool(cfg.get("gemini_api_key"))
     cfg = {k: v for k, v in cfg.items() if k not in
-           ("mfce_cron_secret", "pexels_api_key")}  # keep secrets off the page
+           ("mfce_cron_secret", "pexels_api_key", "gemini_api_key")}
     music = {}
     base = os.path.join(HERE, "music")
     for d in sorted(glob.glob(os.path.join(base, "*"))):
@@ -65,7 +66,8 @@ def api_state():
     refs = [os.path.basename(f) for f in glob.glob(os.path.join(REFS, "*.wav"))]
     branding = {n: os.path.exists(os.path.join(HERE, "branding", n))
                 for n in ("intro.mp4", "endcard.mp4", "endcard.png", "jingle.mp3", "ding.mp3")}
-    return jsonify({"config": cfg, "music": music, "refs": refs,
+    return jsonify({"config": cfg, "gemini_api_key_set": gemini_api_key_set,
+                    "music": music, "refs": refs,
                     "branding": branding, "worker_running": worker_running()})
 
 
@@ -77,7 +79,13 @@ def api_config():
                 "music_volume", "burn_captions", "upload_srt",
                 "approval_wait_minutes", "endcard_hold_seconds",
                 "visuals_engine", "gemini_api_key", "veo_model",
-                "veo_max_clips_per_video", "visual_qa", "gemini_qa_model"):
+                "veo_max_clips_per_video", "visual_qa", "gemini_qa_model",
+                "generated_video_provider", "local_wan_max_clips_per_video",
+                "local_wan_steps", "local_wan_frames"):
+        # A blank secret means "keep the saved value". This lets the dashboard
+        # mask credentials without erasing them on the next settings save.
+        if key == "gemini_api_key" and not incoming.get(key):
+            continue
         if key in incoming:
             cfg[key] = incoming[key]
     save_config(cfg)
@@ -102,6 +110,8 @@ def api_worker():
     body = request.get_json(force=True) or {}
     if body.get("watch"):
         args.append("--watch")
+    if body.get("fresh"):
+        args.append("--fresh")
     if body.get("post"):
         args += ["--post", str(int(body["post"]))]
     logf = open(LOG, "w", encoding="utf-8")
@@ -194,6 +204,7 @@ label{font-size:.85em;display:block;opacity:.8}
   <div class="row">
     <button class="primary" onclick="runWorker(true)">▶ Run pipeline (render → approve → embed)</button>
     <button onclick="runWorker(false)">Run once (no approval wait)</button>
+    <label title="Discard saved voice, plan, clips, and incomplete Veo jobs"><input id="run_fresh" type="checkbox"> Fresh restart (ignore resume cache)</label>
     <button onclick="rebuildBranding()">Rebuild intro/endcard</button>
     <span id="workerstate" class="badge"></span>
   </div>
@@ -238,10 +249,15 @@ label{font-size:.85em;display:block;opacity:.8}
     <option value="pexels">Pexels stock (free)</option>
     <option value="hybrid">Hybrid: AI picks Veo or stock per beat</option>
     <option value="veo">Google Veo only (generative, uses credits)</option></select></div>
+  <div><label>Generated-video provider</label><select id="c_genprovider">
+    <option value="local_wan">Local Wan 2.1 (free, slower)</option>
+    <option value="veo">Google Veo (paid)</option></select></div>
   <div><label>AI frame check (match visuals to narration)</label><input id="c_qa" type="checkbox"></div>
-  <div><label>Gemini API key (Veo)</label><input id="c_gkey" type="password" style="width:16em" placeholder="AIza..."></div>
-  <div><label>Veo model</label><input id="c_vmodel" style="width:15em" placeholder="veo-3.0-fast-generate-001"></div>
+  <div><label>Gemini API key (planner/QA/Veo)</label><input id="c_gkey" type="password" autocomplete="new-password" style="width:16em" placeholder="Enter only to replace saved key"></div>
+  <div><label>Veo model</label><input id="c_vmodel" style="width:18em" placeholder="veo-3.1-fast-generate-preview"></div>
   <div><label>Veo max clips/video</label><input id="c_vmax" type="number" min="1" max="20" style="width:5em"></div>
+  <div><label>Local Wan clips/video</label><input id="c_lmax" type="number" min="1" max="4" style="width:5em"></div>
+  <div><label>Local Wan steps</label><input id="c_lsteps" type="number" min="4" max="50" style="width:5em"></div>
 </div>
 <div id="assets" style="font-size:.9em;margin-top:.5em"></div>
 <div class="row"><button class="primary" onclick="saveConfig()">💾 Save settings</button><span id="savestate"></span></div>
@@ -256,8 +272,11 @@ async function load(){
   c_engine.value=CFG.tts_engine||'edge';c_musvol.value=CFG.music_volume??0.09;
   c_burn.checked=CFG.burn_captions!==false;c_srt.checked=CFG.upload_srt!==false;
   c_wm.value=CFG.watermark||'';c_wait.value=CFG.approval_wait_minutes||45;
-  c_vis.value=CFG.visuals_engine||'pexels';c_gkey.value=CFG.gemini_api_key||'';
+  c_vis.value=CFG.visuals_engine||'pexels';c_gkey.value='';
+  c_genprovider.value=CFG.generated_video_provider||'veo';
+  c_gkey.placeholder=st.gemini_api_key_set?'Saved (masked) — enter only to replace':'No key saved';
   c_vmodel.value=CFG.veo_model||'';c_vmax.value=CFG.veo_max_clips_per_video||8;
+  c_lmax.value=CFG.local_wan_max_clips_per_video||2;c_lsteps.value=CFG.local_wan_steps||20;
   c_qa.checked=CFG.visual_qa!==0&&CFG.visual_qa!==false;
   let a=`Branding: intro ${st.branding['intro.mp4']?'✅':'❌'} · endcard ${st.branding['endcard.mp4']?'✅ (animated)':(st.branding['endcard.png']?'⚠️ static only (rebuild for bell animation)':'❌')} · jingle ${st.branding['jingle.mp3']?'✅':'❌ (drop branding\\\\jingle.mp3 then rebuild)'}<br>Music tracks: `;
   a+=Object.entries(st.music).map(([k,v])=>`${k}: ${v||'❌ 0'}`).join(' · ')||'none';
@@ -279,7 +298,7 @@ async function refreshQueue(){
     :'Queue is empty — nothing needs a video right now.';}
   catch(e){queue.textContent='Could not reach the site: '+e}
 }
-async function runWorker(watch){await j('/api/worker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({watch})});poll()}
+async function runWorker(watch){await j('/api/worker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({watch,fresh:run_fresh.checked})});poll()}
 async function poll(){const l=await j('/api/log');workerstate.textContent=l.running?'worker: running':'worker: idle';
   workerstate.className='badge '+(l.running?'warn':'ok');
   if(l.log){log.style.display='';log.textContent=l.log;log.scrollTop=log.scrollHeight}
@@ -298,11 +317,17 @@ async function saveConfig(){
     if(k==='outro'){if(el.value.trim())outros[p]=el.value.trim()}
     else{voices[p]=voices[p]||{};const v=el.value.trim();
       if(k==='exaggeration')voices[p][k]=parseFloat(el.value);else if(v)voices[p][k]=v;else delete voices[p][k]}});
-  await j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  const payload={
     tts_engine:c_engine.value,music_volume:parseFloat(c_musvol.value),burn_captions:c_burn.checked,
     upload_srt:c_srt.checked,watermark:c_wm.value,approval_wait_minutes:parseInt(c_wait.value),
-    visuals_engine:c_vis.value,gemini_api_key:c_gkey.value,veo_model:c_vmodel.value,
-    veo_max_clips_per_video:parseInt(c_vmax.value)||8,visual_qa:c_qa.checked?1:0,voices,outros})});
+    visuals_engine:c_vis.value,veo_model:c_vmodel.value,
+    generated_video_provider:c_genprovider.value,
+    veo_max_clips_per_video:parseInt(c_vmax.value)||8,
+    local_wan_max_clips_per_video:parseInt(c_lmax.value)||2,
+    local_wan_steps:parseInt(c_lsteps.value)||20,
+    local_wan_frames:49,visual_qa:c_qa.checked?1:0,voices,outros};
+  if(c_gkey.value.trim())payload.gemini_api_key=c_gkey.value.trim();
+  await j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   savestate.textContent='saved ✅';setTimeout(()=>savestate.textContent='',2000);load();
 }
 load();

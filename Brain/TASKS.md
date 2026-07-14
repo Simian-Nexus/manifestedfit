@@ -9,6 +9,11 @@
 
 ## Content engine + video pipeline (added 2026-07-06)
 
+- DONE 2026-07-11: post #73 video `PA61WiNhIYk` approved, public, and embedded; remote video queue empty.
+- Enable paid-tier billing / positive prepay balance for the Gemini API project used by the worker, verify AI Studio shows the project as Paid, then run one new hybrid post and confirm `visual_provenance.json` reports at least one actual Veo beat. Current Veo requests return 429 quota exhausted.
+- Run one fresh blog post through the new local-Wan hybrid backend and confirm final `visual_provenance.json` reports up to 2 `actual: local_wan` beats and total local generation remains near the 8-minute benchmark. Review the first real result before scheduling automation.
+- Restart the localhost dashboard with `07_Deploy/targets/video-worker/run_dashboard.bat` before using its UI; the diagnostic dashboard process was stopped during closeout.
+
 - Re-upload plugin v0.2.0 (`03_Website/wordpress/plugins/manifested-fit-content-engine/`) via FTP - adds [VIDEO EMBED] placeholder, video briefs, and the video REST endpoints.
 - Add ~2 weeks of topics to the plugin's topic queue (it is empty; the daily cron fails loudly on an empty queue).
 - Create the Bluehost cPanel daily cron (command shown on the plugin admin page) and tick Enabled.

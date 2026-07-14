@@ -6,9 +6,14 @@
   "pexels_api_key": "PUT-PEXELS-KEY-HERE",
   "endcard_hold_seconds": 5,
   "visuals_engine": "hybrid",
+  "generated_video_provider": "local_wan",
+  "local_wan_max_clips_per_video": 2,
+  "local_wan_steps": 20,
+  "local_wan_frames": 49,
+  "local_wan_timeout_minutes": 12,
   "gemini_api_key": "",
-  "veo_model": "veo-3.0-fast-generate-001",
+  "veo_model": "veo-3.1-fast-generate-preview",
   "veo_max_clips_per_video": 8,
   "visual_qa": 1,
-  "gemini_qa_model": "gemini-2.5-flash"
+  "gemini_qa_model": "gemini-3.5-flash"
 }

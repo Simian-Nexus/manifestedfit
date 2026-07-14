@@ -1,0 +1,68 @@
+<!-- wp:template-part {"slug":"header","tagName":"div"} /-->
+
+<!-- wp:group {"tagName":"main","className":"mf-main","layout":{"type":"default"}} -->
+<main class="wp-block-group mf-main">
+
+<!-- wp:group {"className":"mf-shell","layout":{"type":"default"}} -->
+<div class="wp-block-group mf-shell">
+<!-- wp:shortcode -->
+[mf_hero_slider]
+<!-- /wp:shortcode -->
+</div>
+<!-- /wp:group -->
+
+<!-- wp:group {"className":"mf-shell mf-section","layout":{"type":"default"}} -->
+<div class="wp-block-group mf-shell mf-section">
+<!-- wp:html -->
+<div class="mf-section-head">
+  <div>
+    <p class="mf-eyebrow">Fresh from the columnists</p>
+    <h2 class="mf-section-title">The Latest</h2>
+  </div>
+</div>
+<!-- /wp:html -->
+<!-- wp:shortcode -->
+[mf_latest_grid count="9"]
+<!-- /wp:shortcode -->
+</div>
+<!-- /wp:group -->
+
+<!-- wp:group {"className":"mf-news-band","layout":{"type":"default"}} -->
+<div class="wp-block-group mf-news-band" id="wellness-news">
+<!-- wp:html -->
+<div class="mf-shell">
+<div class="mf-section-head">
+  <div>
+    <p class="mf-eyebrow">From around the web</p>
+    <h2 class="mf-section-title">Wellness News</h2>
+  </div>
+  <p class="mf-section-sub">Curated headlines &mdash; links open in a new tab.</p>
+</div>
+</div>
+<!-- /wp:html -->
+<!-- wp:group {"className":"mf-shell","layout":{"type":"default"}} -->
+<div class="wp-block-group mf-shell">
+<!-- wp:shortcode -->
+[mf_wellness_news count="6"]
+<!-- /wp:shortcode -->
+</div>
+<!-- /wp:group -->
+</div>
+<!-- /wp:group -->
+
+<!-- wp:html -->
+<section class="mf-cta-band">
+  <div class="mf-shell mf-cta-inner">
+    <div>
+      <h2>Ready to feel the shift?</h2>
+      <p>Take the free 7-Day Mind-Body Reset &mdash; five gentle minutes a day.</p>
+    </div>
+    <a class="mf-btn mf-btn-light" href="https://manifestedfit.com/#reset">Start the free reset</a>
+  </div>
+</section>
+<!-- /wp:html -->
+
+</main>
+<!-- /wp:group -->
+
+<!-- wp:template-part {"slug":"footer","tagName":"div"} /-->

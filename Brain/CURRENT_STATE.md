@@ -1,10 +1,16 @@
 # Current State
 
-Last updated: 2026-07-08
+Last updated: 2026-07-11
 
 ## July 2026 — active workstream: automated blog + content pipeline
 
 The focus has shifted to building an automated, supervised blog/content engine. Full plan in `06_Planning/ACTION_PLAN_2026-07.md`; full handoff (read this first, most current) in `NEXT_CONTEXT_BRIEF.md`.
+
+**2026-07-11 update**: Hybrid video API failures were diagnosed and corrected locally. The worker now uses `gemini-3.5-flash` and `veo-3.1-fast-generate-preview`, runs an AI-model preflight before rendering, and reports requested versus fallback visuals clearly. The dashboard no longer returns the saved Gemini key to browser JavaScript. Live preflight passed. Generation is now resumable under `video-worker/work/post_<ID>/`: voice, hybrid plan, stock/Veo clips, in-flight Veo operation IDs, final render, and YouTube upload ID are checkpointed. Normal reruns resume; dashboard **Fresh restart** / CLI `--fresh` intentionally regenerates. Post #73's video (`PA61WiNhIYk`) is public and embedded; the remote video queue is empty.
+
+**Hybrid provenance result**: post #77 requested 5 Veo + 6 Pexels beats, but every Veo submit returned `429 RESOURCE_EXHAUSTED` (current quota / billing), so the final was 0 Veo + 11 Pexels. Video `rL4vWim7y0M` is public and embedded. Veo requires the Gemini API project to be on a paid tier with available balance/quota. Worker now writes `visual_provenance.json`, self-heals missing WP video briefs locally, and stops further Veo submits after the first 429.
+
+**Free local video backend installed**: official ComfyUI + Wan 2.1 T2V 1.3B on the RTX 3060 12 GB. Benchmarks at 832x480/49 frames: 12 steps = 3m33s; 20 steps = 4m03s and visibly cleaner; observed VRAM ~6.1-6.25 GB. Hybrid now defaults to `generated_video_provider=local_wan`, 20 steps, 49 frames, max 2 generated beats (~8 minutes total warm). Raw 3.06s clips are slowed to their narration-beat length and enter the normal 1080p render. Full notes: `video-worker/local-video/README.md`.
 
 **2026-07-08 update**: the video worker is now built and has produced two live, embedded videos (see `NEXT_CONTEXT_BRIEF.md` top section for full detail) — YouTube OAuth live, `video_worker.py` + a localhost control dashboard (`07_Deploy/targets/video-worker/dashboard.py`, run via `run_dashboard.bat`) both working, plugin embed bug fixed (v0.4.2). Open: jingle/persona music (Suno), Chatterbox voice cloning decision, Task Scheduler automation, YouTube API audit request.
 

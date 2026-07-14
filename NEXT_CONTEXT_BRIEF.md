@@ -1,6 +1,38 @@
 # Next Context Brief
 
-**Last updated: 2026-07-10.** Point a fresh session at this file to continue seamlessly.
+**Last updated: 2026-07-12.** Point a fresh session at this file to continue seamlessly.
+
+## Session prep 2026-07-12 (by Jeeves — distilled from this brief + Brain/TASKS.md; no state changed)
+
+Jonathan plans to work on this project imminently. Highest-value next moves, in order:
+
+1. **Run one fresh post through the local-Wan hybrid backend** and inspect
+   `visual_provenance.json` + quality (expect up to 2 `actual: local_wan` beats,
+   ~8 min warm). This is the top unvalidated piece of the pipeline.
+2. **Veo billing decision**: Veo returns 429 RESOURCE_EXHAUSTED until the Gemini
+   API project is on a paid tier with balance. Decide pay vs. stay on local Wan + Pexels.
+3. **Google Search Console + GA4** were deliberately deferred to ~the week of
+   **2026-07-13 — that's now.** Set both up, then re-run Rank Math's Analytics connect.
+4. Smaller Jonathan-only items still open per the 07-09/07-11 notes: activate the
+   Affiliates plugin in wp-admin + enter real offers; paste the Pexels key into
+   Content Engine settings (and consider rotating it — it echoed into a session log
+   2026-07-09); Dana Cole's music folder is still empty; confirm the Bluehost cPanel
+   cron exists; topic queue may need ~2 weeks of topics (was empty per TASKS.md);
+   trash "Pipeline Test" drafts 28/29; the FTP-script permission entry in
+   `.claude/settings.local.json` was never added (manual FileZilla is the fallback).
+
+Unverified since 2026-07-11: remote queue state, cron existence, topic queue depth —
+check live before acting.
+
+## Post #73 hybrid video — completed
+
+- Post #73, **“Why You Feel Tired All the Time (And Small Fixes That Help)”** (Dana Cole), now has public, embedded YouTube video `PA61WiNhIYk`. Telegram approval completed and the remote video queue is empty. Do not regenerate it.
+- Hybrid API correction is local and verified: planner/QA = `gemini-3.5-flash`; Veo = `veo-3.1-fast-generate-preview`; live preflight printed `planner/QA + Veo ready`.
+- Dashboard security correction is local and verified: `/api/state` no longer contains `gemini_api_key`; it returns only `gemini_api_key_set`. Blank key input preserves the stored secret.
+- Start the dashboard via `07_Deploy/targets/video-worker/run_dashboard.bat` if UI control is wanted; no diagnostic dashboard process was intentionally left running.
+- **Resumable generation added and tested**: per-post state lives in ignored `video-worker/work/post_<ID>/`; an in-flight Veo operation is re-polled rather than resubmitted; completed media and YouTube preview IDs are reused. Dashboard has **Fresh restart** and CLI has `--fresh`, which should be used only for intentional regeneration/rejection/input changes. Full protocol: `07_Deploy/targets/video-worker/RESUMABLE_GENERATION.md`.
+- **Veo billing blocker proven with post #77**: hybrid selected 5 Veo beats, but Google returned `429 RESOURCE_EXHAUSTED` with a plan/billing/quota message on every submit; final provenance was 0 Veo + 11 Pexels. Video `rL4vWim7y0M` is public and embedded. Enable paid billing / positive balance for this API project before another Veo test. Worker now records actual per-beat sources in `visual_provenance.json` and stops retrying Veo after the first 429.
+- **Free local Wan backend installed/integrated**: ComfyUI + Wan 2.1 T2V 1.3B runs on RTX 3060 12 GB. Benchmarks: 3.06s/12 steps = 3m33s; 3.06s/20 steps = 4m03s, preferred quality; ~6.1 GB VRAM. Hybrid config now defaults to local Wan, 20 steps, max 2 clips/video (~8 min warm), with Pexels for remaining beats. Worker auto-starts private ComfyUI with paid API nodes disabled and slows raw clips to beat duration. Next: test one real fresh post and inspect provenance/quality. See `video-worker/local-video/README.md`.
 
 ## Progress 2026-07-10 (this session) — news rewrites, blog nav link, video polish
 

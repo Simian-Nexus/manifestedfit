@@ -1,0 +1,58 @@
+name: manifestedfit-mirror
+
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  wordpress:
+    image: wordpress:php8.3-apache
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8090:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ../themes/manifestedfit-blog:/var/www/html/wp-content/themes/manifestedfit-blog
+      - ../plugins/manifested-fit-content-engine:/var/www/html/wp-content/plugins/manifested-fit-content-engine
+      - ../plugins/manifested-fit-affiliates:/var/www/html/wp-content/plugins/manifested-fit-affiliates
+
+  cli:
+    image: wordpress:cli-php8.3
+    depends_on:
+      db:
+        condition: service_healthy
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ../themes/manifestedfit-blog:/var/www/html/wp-content/themes/manifestedfit-blog
+      - ../plugins/manifested-fit-content-engine:/var/www/html/wp-content/plugins/manifested-fit-content-engine
+      - ../plugins/manifested-fit-affiliates:/var/www/html/wp-content/plugins/manifested-fit-affiliates
+    entrypoint: ["wp"]
+    command: ["--info"]
+
+volumes:
+  db_data:
+  wp_data:

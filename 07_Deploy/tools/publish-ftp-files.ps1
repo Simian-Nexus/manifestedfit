@@ -120,7 +120,7 @@ function Send-RemoteFile {
     )
 
     if ($RemoteInfo.IsExplicitFtps) {
-        & curl.exe --silent --show-error --fail --user $RemoteInfo.Credential --ssl-reqd --ftp-create-dirs --upload-file $LocalPath $RemoteUrl
+        & curl.exe --silent --show-error --fail --user $RemoteInfo.Credential --ssl-reqd --ssl-no-revoke --ftp-create-dirs --upload-file $LocalPath $RemoteUrl
     }
     else {
         & curl.exe --silent --show-error --fail --user $RemoteInfo.Credential --ftp-create-dirs --upload-file $LocalPath $RemoteUrl
@@ -139,7 +139,7 @@ function Get-RemoteFile {
     )
 
     if ($RemoteInfo.IsExplicitFtps) {
-        & curl.exe --silent --show-error --fail --user $RemoteInfo.Credential --ssl-reqd $RemoteUrl -o $DestinationPath
+        & curl.exe --silent --show-error --fail --user $RemoteInfo.Credential --ssl-reqd --ssl-no-revoke $RemoteUrl -o $DestinationPath
     }
     else {
         & curl.exe --silent --show-error --fail --user $RemoteInfo.Credential $RemoteUrl -o $DestinationPath

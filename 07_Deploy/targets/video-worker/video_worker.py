@@ -24,6 +24,7 @@ on this machine - plain pip fails on source builds and TLS).
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import random
@@ -31,7 +32,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 
 import requests
@@ -45,6 +45,7 @@ BRAND = os.path.join(HERE, "branding")
 MIN_BEAT_SECONDS = 4.5    # narration beats shorter than this merge into the next
 ENDCARD_HOLD = 5.0        # extra seconds the end card stays up after the outro
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
+WORK_ROOT = os.path.join(HERE, "work")
 
 # Bluehost mod_security rejects the default python-requests agent with a 406
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) MFCE-video-worker"}
@@ -57,6 +58,7 @@ STOPWORDS = set(
 )
 
 _CHATTERBOX = None  # loaded once, reused across posts
+_COMFY_PROC = None
 
 
 def load_config():
@@ -89,6 +91,62 @@ def mfce(cfg, method, path, **params):
     return r.json()
 
 
+def ensure_video_brief(cfg, item):
+    """Return the queued brief, or self-heal a rare missing-brief draft by
+    reading it through the existing WordPress application-password config and
+    caching a generated companion brief in the resumable workspace."""
+    brief = item.get("video_brief")
+    if brief and brief.get("voiceover_script"):
+        return normalize_video_brief(brief)
+    pid = int(item["post_id"])
+    cache_dir = os.path.join(WORK_ROOT, f"post_{pid}")
+    cache_path = os.path.join(cache_dir, "synthesized_brief.json")
+    cached = json_read(cache_path)
+    if cached and cached.get("voiceover_script"):
+        print("  resume: reusing synthesized video brief")
+        return normalize_video_brief(cached)
+    wp_path = cfg.get("wordpress_config_file") or os.path.join(
+        HERE, "..", "wordpress", "config.json")
+    wp = json_read(os.path.abspath(wp_path), {})
+    if not all(wp.get(k) for k in ("site_url", "username", "app_password")):
+        return None
+    r = requests.get(f"{wp['site_url'].rstrip('/')}/wp-json/wp/v2/posts/{pid}",
+                     params={"context": "edit"},
+                     auth=(wp["username"], wp["app_password"]), headers=UA, timeout=60)
+    r.raise_for_status()
+    post = r.json()
+    content = ((post.get("content") or {}).get("raw") or
+               (post.get("content") or {}).get("rendered") or "")
+    prompt = ("Create a 60-90 second faceless YouTube companion-video brief for "
+              "this wellness article. The voiceover must be 150-220 spoken words, "
+              "stand alone, avoid medical claims, and match the article. Return JSON "
+              "with youtube_title, youtube_description ending in 'Full article: "
+              "{POST_URL}', voiceover_script, and visual_direction.\n\nTITLE: "
+              + item.get("title", "") + "\n\nARTICLE HTML:\n" + content[:18000])
+    brief = gemini_json(cfg, [{"text": prompt}], timeout=120)
+    if not brief.get("voiceover_script"):
+        return None
+    os.makedirs(cache_dir, exist_ok=True)
+    json_write(cache_path, brief)
+    print("  missing WordPress video brief: synthesized and cached locally")
+    return normalize_video_brief(brief)
+
+
+def normalize_video_brief(brief):
+    """Coerce harmless provider shape variations into the worker contract."""
+    brief = dict(brief)
+    direction = brief.get("visual_direction", "")
+    if isinstance(direction, list):
+        direction = "; ".join(str(x) for x in direction)
+    elif isinstance(direction, dict):
+        direction = "; ".join(f"{k}: {v}" for k, v in direction.items())
+    brief["visual_direction"] = str(direction or "")
+    for key in ("youtube_title", "youtube_description", "voiceover_script"):
+        if not isinstance(brief.get(key), str):
+            brief[key] = str(brief.get(key) or "")
+    return brief
+
+
 def run(cmd, cwd=None):
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if p.returncode != 0:
@@ -100,6 +158,59 @@ def media_duration(path):
     p = run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
              "-of", "csv=p=0", path])
     return float(p.stdout.strip())
+
+
+def valid_media(path):
+    try:
+        return os.path.exists(path) and os.path.getsize(path) > 1024 and media_duration(path) > 0.1
+    except Exception:
+        return False
+
+
+def json_read(path, default=None):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def json_write(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+def job_fingerprint(item, cfg):
+    material = {"post_id": item.get("post_id"), "title": item.get("title"),
+                "persona": item.get("persona"), "brief": item.get("video_brief"),
+                "tts_engine": cfg.get("tts_engine"), "voices": cfg.get("voices"),
+                "outros": cfg.get("outros"), "visuals_engine": cfg.get("visuals_engine"),
+                "generated_video_provider": cfg.get("generated_video_provider"),
+                "local_wan_steps": cfg.get("local_wan_steps"),
+                "local_wan_frames": cfg.get("local_wan_frames"),
+                "local_wan_cap": cfg.get("local_wan_max_clips_per_video"),
+                "veo_model": cfg.get("veo_model"), "veo_cap": cfg.get("veo_max_clips_per_video"),
+                "qa_model": cfg.get("gemini_qa_model")}
+    raw = json.dumps(material, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def prepare_workdir(item, cfg, fresh=False):
+    os.makedirs(WORK_ROOT, exist_ok=True)
+    path = os.path.join(WORK_ROOT, f"post_{int(item['post_id'])}")
+    fingerprint = job_fingerprint(item, cfg)
+    manifest_path = os.path.join(path, "manifest.json")
+    old = json_read(manifest_path, {}) if os.path.isdir(path) else {}
+    if fresh or (old and old.get("fingerprint") != fingerprint):
+        shutil.rmtree(path, ignore_errors=True)
+        old = {}
+    os.makedirs(path, exist_ok=True)
+    manifest = {**old, "post_id": int(item["post_id"]), "fingerprint": fingerprint,
+                "updated": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    json_write(manifest_path, manifest)
+    return path, manifest
 
 
 def sentences(text):
@@ -114,6 +225,10 @@ def tts_edge(script, vcfg, workdir, stem):
     (mp3_path, timing) where timing is {"sentences": [(text, start_s, end_s)],
     "words": [(start_s, dur_s)]} (either may be empty) or None."""
     out = os.path.join(workdir, f"{stem}.mp3")
+    timing_path = os.path.join(workdir, f"{stem}.timing.json")
+    if valid_media(out) and os.path.exists(timing_path):
+        print(f"  resume: reusing {stem} voiceover")
+        return out, json_read(timing_path)
     try:
         import asyncio
         import edge_tts
@@ -136,6 +251,7 @@ def tts_edge(script, vcfg, workdir, stem):
 
         asyncio.run(_gen())
         timing = {"sentences": sents, "words": words} if (sents or words) else None
+        json_write(timing_path, timing)
         return out, timing
     except Exception as e:
         print(f"  edge-tts streaming failed ({e}); falling back to the CLI")
@@ -144,11 +260,16 @@ def tts_edge(script, vcfg, workdir, stem):
             f.write(script)
         run([sys.executable, "-m", "edge_tts", "--voice", vcfg["edge"],
              "--file", txt, "--write-media", out])
+        json_write(timing_path, None)
         return out, None
 
 
 def tts_chatterbox(script, vcfg, workdir, stem):
     global _CHATTERBOX
+    out = os.path.join(workdir, f"{stem}.wav")
+    if valid_media(out):
+        print(f"  resume: reusing {stem} voiceover")
+        return out
     import torch
     import torchaudio
     from chatterbox.tts import ChatterboxTTS
@@ -174,7 +295,6 @@ def tts_chatterbox(script, vcfg, workdir, stem):
     if ref and os.path.exists(ref):
         kwargs["audio_prompt_path"] = ref
     wavs = [_CHATTERBOX.generate(c, **kwargs) for c in chunks]
-    out = os.path.join(workdir, f"{stem}.wav")
     torchaudio.save(out, torch.cat(wavs, dim=-1), _CHATTERBOX.sr)
     return out
 
@@ -276,7 +396,7 @@ def script_beats(script, main_dur, timing=None):
     return out
 
 
-def fetch_beat_clips(cfg, beats, fallback_queries, workdir):
+def fetch_beat_clips(cfg, beats, fallback_queries, workdir, cache_keys=None):
     """One landscape HD clip per narration beat (searched from that beat's own
     words). With a Gemini key and visual_qa on, an AI vision check scores
     each candidate's preview frame against the narration line and takes the
@@ -312,6 +432,12 @@ def fetch_beat_clips(cfg, beats, fallback_queries, workdir):
         return raw
 
     for i, (text, query, dur) in enumerate(beats):
+        key = cache_keys[i] if cache_keys else f"stock_{i}"
+        cached = os.path.join(workdir, f"{key}.mp4")
+        if valid_media(cached):
+            print(f"  resume: reusing stock beat {key}")
+            clips.append(cached)
+            continue
         tries = ([query] if query else []) + [fallback_queries[i % len(fallback_queries)]]
         chosen, best, best_score = None, None, -1.0
         for q in tries:
@@ -344,7 +470,7 @@ def fetch_beat_clips(cfg, beats, fallback_queries, workdir):
                 raise RuntimeError("Pexels returned no usable clips.")
             clips.append(clips[-1])  # reuse the previous beat's clip
             continue
-        clips.append(download(chosen, f"raw_{len(clips)}_{i}.mp4"))
+        clips.append(download(chosen, f"{key}.mp4"))
     return clips
 
 
@@ -355,7 +481,7 @@ GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 def gemini_json(cfg, parts, timeout=90):
     """generateContent call returning parsed JSON (responseMimeType json)."""
-    model = cfg.get("gemini_qa_model") or "gemini-2.5-flash"
+    model = cfg.get("gemini_qa_model") or "gemini-3.5-flash"
     r = requests.post(f"{GEMINI_BASE}/models/{model}:generateContent",
                       headers={"x-goog-api-key": cfg["gemini_api_key"],
                                "Content-Type": "application/json"},
@@ -365,6 +491,52 @@ def gemini_json(cfg, parts, timeout=90):
     r.raise_for_status()
     txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
     return json.loads(txt)
+
+
+def preflight_visual_models(cfg):
+    """Fail fast before an expensive render when configured AI models are not
+    available to this API key. Returns True only when planner/QA and Veo are
+    both ready; callers can then make one explicit stock-only fallback."""
+    engine = cfg.get("visuals_engine") or "pexels"
+    if engine not in ("hybrid", "veo"):
+        return True
+    try:
+        gemini_json(cfg, [{"text": 'Reply exactly as JSON: {"ok": true}'}], timeout=30)
+    except Exception as e:
+        print(f"  AI visual preflight: planner/QA unavailable ({e})")
+        return False
+    provider = cfg.get("generated_video_provider") or "veo"
+    if provider == "local_wan":
+        root = os.path.abspath(os.path.join(HERE, cfg.get(
+            "comfyui_dir", "local-video/ComfyUI")))
+        required = [
+            os.path.join(root, ".venv", "Scripts", "python.exe"),
+            os.path.join(root, "models", "diffusion_models", "wan2.1_t2v_1.3B_bf16.safetensors"),
+            os.path.join(root, "models", "text_encoders", "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
+            os.path.join(root, "models", "vae", "wan_2.1_vae.safetensors"),
+        ]
+        missing = [p for p in required if not os.path.exists(p)]
+        if missing:
+            print(f"  AI visual preflight: local Wan asset missing ({missing[0]})")
+            return False
+        print("  AI visual preflight: planner/QA + local Wan assets ready")
+        return True
+    try:
+        key = cfg["gemini_api_key"]
+        r = requests.get(f"{GEMINI_BASE}/models", headers={"x-goog-api-key": key},
+                         params={"pageSize": 1000}, timeout=30)
+        r.raise_for_status()
+        wanted = "models/" + (cfg.get("veo_model") or "veo-3.1-fast-generate-preview")
+        methods = {m.get("name"): m.get("supportedGenerationMethods", [])
+                   for m in r.json().get("models", [])}
+        if "predictLongRunning" not in methods.get(wanted, []):
+            print(f"  AI visual preflight: Veo model unavailable ({wanted})")
+            return False
+    except Exception as e:
+        print(f"  AI visual preflight: could not verify Veo ({e})")
+        return False
+    print("  AI visual preflight: planner/QA ready; Veo model visible (quota checked on submit)")
+    return True
 
 
 def frame_matches(cfg, jpeg_bytes, beat_text):
@@ -455,17 +627,28 @@ def veo_generate_clip(cfg, prompt, seconds, workdir, stem):
     operation: submit, poll, download). Raises on any failure so the caller
     can fall back to Pexels for that beat."""
     key = cfg["gemini_api_key"]
-    model = cfg.get("veo_model") or "veo-3.0-fast-generate-001"
+    model = cfg.get("veo_model") or "veo-3.1-fast-generate-preview"
     headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
     body = {"instances": [{"prompt": prompt}],
             "parameters": {"aspectRatio": "16:9"}}
     if "3.1" in model:  # Veo 3.1 accepts 4/6/8s; Veo 3.0 is fixed at 8s
         body["parameters"]["durationSeconds"] = next(
             (d for d in (4, 6, 8) if d + 0.2 >= seconds), 8)
-    r = requests.post(f"{GEMINI_BASE}/models/{model}:predictLongRunning",
-                      headers=headers, json=body, timeout=60)
-    r.raise_for_status()
-    op = r.json()["name"]
+    out = os.path.join(workdir, f"{stem}.mp4")
+    operation_path = os.path.join(workdir, f"{stem}.operation.json")
+    if valid_media(out):
+        print(f"  resume: reusing completed {stem}")
+        return out
+    saved = json_read(operation_path, {})
+    op = saved.get("name") if saved.get("model") == model else None
+    if op:
+        print(f"  resume: polling existing Veo job for {stem}")
+    else:
+        r = requests.post(f"{GEMINI_BASE}/models/{model}:predictLongRunning",
+                          headers=headers, json=body, timeout=60)
+        r.raise_for_status()
+        op = r.json()["name"]
+        json_write(operation_path, {"name": op, "model": model, "prompt": prompt})
     deadline = time.time() + float(cfg.get("veo_timeout_minutes") or 6) * 60
     while time.time() < deadline:
         time.sleep(10)
@@ -475,6 +658,8 @@ def veo_generate_clip(cfg, prompt, seconds, workdir, stem):
         if not data.get("done"):
             continue
         if "error" in data:
+            if os.path.exists(operation_path):
+                os.remove(operation_path)  # terminal job failure; a rerun may resubmit
             raise RuntimeError(f"Veo: {data['error'].get('message', data['error'])}")
         resp = data.get("response", {})
         # the response shape has varied across Veo releases; check both
@@ -484,14 +669,99 @@ def veo_generate_clip(cfg, prompt, seconds, workdir, stem):
         uri = video.get("uri") or video.get("videoUri")
         if not uri:
             raise RuntimeError(f"Veo: no video in response: {str(resp)[:300]}")
-        out = os.path.join(workdir, f"{stem}.mp4")
         with requests.get(uri, headers={"x-goog-api-key": key}, stream=True,
                           timeout=300) as dl:
             dl.raise_for_status()
             with open(out, "wb") as f:
                 shutil.copyfileobj(dl.raw, f)
+        if os.path.exists(operation_path):
+            os.remove(operation_path)
         return out
     raise RuntimeError("Veo: generation timed out")
+
+
+def ensure_comfyui(cfg):
+    """Return the local ComfyUI URL, starting its private server if needed."""
+    global _COMFY_PROC
+    base = cfg.get("comfyui_url") or "http://127.0.0.1:8188"
+    try:
+        requests.get(base + "/system_stats", timeout=3).raise_for_status()
+        return base
+    except requests.RequestException:
+        pass
+    root = os.path.abspath(os.path.join(HERE, cfg.get("comfyui_dir", "local-video/ComfyUI")))
+    python = os.path.join(root, ".venv", "Scripts", "python.exe")
+    log = open(os.path.join(root, "comfyui_worker.log"), "a", encoding="utf-8")
+    _COMFY_PROC = subprocess.Popen(
+        [python, "-u", "main.py", "--listen", "127.0.0.1", "--port", "8188",
+         "--lowvram", "--disable-api-nodes", "--disable-auto-launch"],
+        cwd=root, stdout=log, stderr=subprocess.STDOUT, text=True)
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        if _COMFY_PROC.poll() is not None:
+            raise RuntimeError("Local ComfyUI exited during startup; see comfyui_worker.log")
+        try:
+            requests.get(base + "/system_stats", timeout=3).raise_for_status()
+            return base
+        except requests.RequestException:
+            time.sleep(3)
+    raise RuntimeError("Local ComfyUI did not start within 3 minutes")
+
+
+def local_wan_generate_clip(cfg, prompt, seconds, workdir, stem):
+    """Generate a local Wan 2.1 clip and slow it to the narration beat."""
+    out = os.path.join(workdir, f"{stem}.mp4")
+    if valid_media(out):
+        print(f"  resume: reusing completed {stem}")
+        return out
+    base = ensure_comfyui(cfg)
+    steps = int(cfg.get("local_wan_steps") or 20)
+    frames = int(cfg.get("local_wan_frames") or 49)
+    seed = int(hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:15], 16)
+    negative = ("blurry, static image, low quality, text, watermark, logo, "
+                "distorted, deformed, oversaturated, jitter, duplicate objects")
+    workflow = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.1_t2v_1.3B_bf16.safetensors", "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "device": "cpu"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": "wan_2.1_vae.safetensors"}},
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["2", 0]}},
+        "5": {"class_type": "CLIPTextEncode", "inputs": {"text": negative, "clip": ["2", 0]}},
+        "6": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["1", 0], "shift": 8.0}},
+        "7": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {"width": 832, "height": 480, "length": frames, "batch_size": 1}},
+        "8": {"class_type": "KSampler", "inputs": {"model": ["6", 0], "seed": seed,
+            "steps": steps, "cfg": 6.0, "sampler_name": "uni_pc", "scheduler": "simple",
+            "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["7", 0], "denoise": 1.0}},
+        "9": {"class_type": "VAEDecode", "inputs": {"samples": ["8", 0], "vae": ["3", 0]}},
+        "10": {"class_type": "CreateVideo", "inputs": {"images": ["9", 0], "fps": 16.0}},
+        "11": {"class_type": "SaveVideo", "inputs": {"video": ["10", 0],
+            "filename_prefix": f"mf_worker/{stem}", "format": "mp4", "codec": "h264"}},
+    }
+    r = requests.post(base + "/prompt", json={"prompt": workflow}, timeout=30)
+    r.raise_for_status()
+    submitted = r.json()
+    if submitted.get("node_errors"):
+        raise RuntimeError(f"Local Wan workflow rejected: {submitted['node_errors']}")
+    prompt_id = submitted["prompt_id"]
+    print(f"  local Wan: {steps} steps, {frames} frames (job {prompt_id[:8]})")
+    deadline = time.time() + float(cfg.get("local_wan_timeout_minutes") or 12) * 60
+    result = None
+    while time.time() < deadline:
+        history = requests.get(base + f"/history/{prompt_id}", timeout=30).json()
+        if prompt_id in history:
+            images = history[prompt_id].get("outputs", {}).get("11", {}).get("images", [])
+            if not images:
+                raise RuntimeError("Local Wan completed without a saved video")
+            result = images[0]
+            break
+        time.sleep(5)
+    if not result:
+        raise RuntimeError("Local Wan generation timed out")
+    root = os.path.abspath(os.path.join(HERE, cfg.get("comfyui_dir", "local-video/ComfyUI")))
+    raw = os.path.join(root, "output", result.get("subfolder", ""), result["filename"])
+    raw_dur = media_duration(raw)
+    run(["ffmpeg", "-y", "-i", raw, "-vf", f"setpts={seconds / raw_dur:.6f}*PTS",
+         "-an", "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p", out])
+    return out
 
 
 def gather_beat_clips(cfg, beats, brief, title, workdir):
@@ -505,20 +775,31 @@ def gather_beat_clips(cfg, beats, brief, title, workdir):
     fallback = pexels_queries(brief, title)
     has_gem = bool(cfg.get("gemini_api_key"))
     engine = cfg.get("visuals_engine") or "pexels"
+    if engine in ("veo", "hybrid") and not cfg.get("_ai_visuals_ready", True):
+        print(f"  visuals result: {engine} requested -> Pexels fallback (preflight failed)")
+        return fetch_beat_clips(cfg, beats, fallback, workdir)
     if engine in ("veo", "hybrid") and not has_gem:
         print("  visuals: gemini_api_key missing -> pexels only")
         engine = "pexels"
     if engine == "pexels":
         return fetch_beat_clips(cfg, beats, fallback, workdir)
 
-    cap = int(cfg.get("veo_max_clips_per_video") or 8)
+    provider = cfg.get("generated_video_provider") or "veo"
+    cap = int((cfg.get("local_wan_max_clips_per_video") or 2) if provider == "local_wan"
+              else (cfg.get("veo_max_clips_per_video") or 8))
     qa = has_gem and bool(cfg.get("visual_qa", 1))
     specs = None
     if engine == "hybrid":
+        plan_path = os.path.join(workdir, "hybrid_plan.json")
         try:
-            specs = plan_beats(cfg, beats, brief, cap)
+            specs = json_read(plan_path)
+            if specs and len(specs) == len(beats):
+                print("  resume: reusing hybrid beat plan")
+            else:
+                specs = plan_beats(cfg, beats, brief, cap)
+                json_write(plan_path, specs)
             n_veo = sum(1 for s in specs if s["source"] == "veo")
-            print(f"  hybrid plan: {n_veo} Veo + {len(specs) - n_veo} Pexels beats")
+            print(f"  hybrid plan: {n_veo} generated ({provider}) + {len(specs) - n_veo} Pexels beats")
         except Exception as e:
             print(f"  hybrid planner failed ({e}); Veo for the first {cap} beats")
     if specs is None:
@@ -527,28 +808,50 @@ def gather_beat_clips(cfg, beats, brief, title, workdir):
                  for i in range(len(beats))]
 
     clips = [None] * len(beats)
+    provenance = [{"beat": i + 1, "narration": b[0],
+                   "requested": specs[i]["source"], "actual": None,
+                   "reason": None} for i, b in enumerate(beats)]
     veo_used = 0
+    veo_quota_blocked = False
     stock_beats = []  # (original index, beat with the planner's query)
     for i, ((text, query, dur), spec) in enumerate(zip(beats, specs)):
-        if spec["source"] == "veo" and veo_used < cap:
+        if spec["source"] == "veo" and veo_quota_blocked:
+            provenance[i]["reason"] = "Veo quota unavailable after earlier 429; used stock fallback"
+        elif spec["source"] == "veo" and veo_used < cap:
             try:
-                print(f"  veo: beat {i + 1}/{len(beats)} ({dur:.1f}s)...")
-                clip = veo_generate_clip(
-                    cfg, spec["veo_prompt"] or veo_prompt(text, brief),
-                    dur, workdir, f"veo_{i}")
+                print(f"  {provider}: beat {i + 1}/{len(beats)} ({dur:.1f}s)...")
+                generator = local_wan_generate_clip if provider == "local_wan" else veo_generate_clip
+                stem = f"local_wan_{i}" if provider == "local_wan" else f"veo_{i}"
+                clip = generator(cfg, spec["veo_prompt"] or veo_prompt(text, brief),
+                                 dur, workdir, stem)
                 veo_used += 1
                 if qa and not veo_clip_ok(cfg, clip, text):
                     print(f"  veo beat {i + 1}: frame check failed -> stock instead")
+                    provenance[i]["reason"] = "Veo frame QA rejected; used stock fallback"
                     clip = None
                 clips[i] = clip
+                if clip:
+                    provenance[i]["actual"] = provider
             except Exception as e:
                 print(f"  veo beat {i + 1} failed ({e}) -> stock instead")
+                provenance[i]["reason"] = f"Veo failed; used stock fallback: {e}"
+                if provider == "veo" and isinstance(e, requests.HTTPError) and e.response is not None and e.response.status_code == 429:
+                    veo_quota_blocked = True
+                    print("  veo quota unavailable: remaining generated beats will use stock")
         if clips[i] is None:
             stock_beats.append((i, (text, spec["pexels_query"] or query, dur)))
     if stock_beats:
-        filled = fetch_beat_clips(cfg, [b for _, b in stock_beats], fallback, workdir)
+        filled = fetch_beat_clips(cfg, [b for _, b in stock_beats], fallback, workdir,
+                                  [f"stock_{i}" for i, _ in stock_beats])
         for (i, _b), c in zip(stock_beats, filled):
             clips[i] = c
+            provenance[i]["actual"] = "pexels"
+            if not provenance[i]["reason"]:
+                provenance[i]["reason"] = ("Hybrid selected stock" if specs[i]["source"] == "pexels"
+                                             else "Stock fallback")
+    json_write(os.path.join(workdir, "visual_provenance.json"), provenance)
+    actual_generated = sum(1 for p in provenance if p["actual"] in ("veo", "local_wan"))
+    print(f"  visual provenance: {actual_generated} {provider} + {len(provenance) - actual_generated} Pexels in final")
     return clips
 
 
@@ -580,6 +883,11 @@ def build_srt(entries, path):
 # ---------------------------------------------------------------- rendering
 
 def render(cfg, brief, title, persona, workdir):
+    cached_final = os.path.join(workdir, "final.mp4")
+    cached_srt = os.path.join(workdir, "captions.srt")
+    if valid_media(cached_final) and os.path.exists(cached_srt):
+        print("  resume: reusing completed final render")
+        return cached_final, cached_srt
     outros = cfg.get("outros", {})
     outro_text = outros.get(persona) or outros.get("default") or ""
     endcard_mp4 = os.path.join(BRAND, "endcard.mp4")
@@ -615,9 +923,9 @@ def render(cfg, brief, title, persona, workdir):
     if not use_endcard and main_dur > 0:
         scale = total / main_dur
         beats = [(t, q, d * scale) for t, q, d in beats]
-    engine = "veo" if ((cfg.get("visuals_engine") or "pexels") == "veo"
-                       and cfg.get("gemini_api_key")) else "pexels"
-    print(f"  visuals: {engine}, {len(beats)} narration beats")
+    requested_engine = cfg.get("visuals_engine") or "pexels"
+    cfg["_ai_visuals_ready"] = preflight_visual_models(cfg)
+    print(f"  visuals requested: {requested_engine}, {len(beats)} narration beats")
     clips = gather_beat_clips(cfg, beats, brief, title, workdir)
     print(f"  b-roll: {len(clips)} beat-aligned clips")
 
@@ -823,6 +1131,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--post", type=int, help="only process this post id")
     ap.add_argument("--keep", action="store_true", help="keep work dirs")
+    ap.add_argument("--fresh", action="store_true",
+                    help="discard cached work for selected post(s) and regenerate")
     ap.add_argument("--watch", action="store_true",
                     help="wait for Telegram approval, then publish + embed")
     args = ap.parse_args()
@@ -847,28 +1157,43 @@ def main():
             print(f"#{pid}: approved -> public + embed")
             publish_and_embed(cfg, yt, pid, vid)
 
+        elif status == "review":
+            vid = youtube_id(item.get("preview_url"))
+            print(f"#{pid}: preview already uploaded; waiting for video approval")
+            if args.watch and vid:
+                uploaded.add(pid)
+
         elif status in ("needed", "rejected"):
-            brief = item.get("video_brief")
+            brief = ensure_video_brief(cfg, item)
             if not brief or not brief.get("voiceover_script"):
                 print(f"#{pid}: no usable video brief — skipping")
                 continue
+            item["video_brief"] = brief
             print(f"#{pid}: rendering \"{item['title']}\" "
                   f"(persona: {persona or 'unknown'}, status {status})")
-            workdir = tempfile.mkdtemp(prefix=f"mfce_video_{pid}_")
+            workdir, manifest = prepare_workdir(item, cfg, args.fresh or status == "rejected")
+            print(f"  resumable workspace: {workdir}")
             try:
-                final, srt = render(cfg, brief, item["title"], persona, workdir)
-                vid = upload_unlisted(yt, final, brief, item.get("permalink"))
-                if cfg.get("upload_srt", True):
-                    upload_captions(yt, vid, srt)
+                vid = manifest.get("youtube_video_id")
+                if vid:
+                    print(f"  resume: reusing uploaded YouTube preview {vid}")
+                else:
+                    final, srt = render(cfg, brief, item["title"], persona, workdir)
+                    vid = upload_unlisted(yt, final, brief, item.get("permalink"))
+                    manifest["youtube_video_id"] = vid
+                    json_write(os.path.join(workdir, "manifest.json"), manifest)
+                    if cfg.get("upload_srt", True) and not manifest.get("caption_uploaded"):
+                        upload_captions(yt, vid, srt)
+                        manifest["caption_uploaded"] = True
+                        json_write(os.path.join(workdir, "manifest.json"), manifest)
                 url = f"https://www.youtube.com/watch?v={vid}"
                 mfce(cfg, "POST", "/video-ready", post_id=pid, preview_url=url)
+                manifest["video_ready_sent"] = True
+                json_write(os.path.join(workdir, "manifest.json"), manifest)
                 print(f"#{pid}: uploaded unlisted -> {url} (Telegram sent)")
                 uploaded.add(pid)
             finally:
-                if args.keep:
-                    print(f"  work dir kept: {workdir}")
-                else:
-                    shutil.rmtree(workdir, ignore_errors=True)
+                print(f"  resume cache kept: {workdir}")
         else:
             print(f"#{pid}: status '{status}' — nothing to do")
 
